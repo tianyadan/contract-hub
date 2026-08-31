@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 系统文件
+.DS_Store

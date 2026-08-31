@@ -1,0 +1,904 @@
+definitions:
+  github_com_lshc_contract-hub_backend_pkg_response.Body:
+    properties:
+      code:
+        type: integer
+      data: {}
+      message:
+        type: string
+    type: object
+  internal_handler.LoginRequest:
+    properties:
+      password:
+        description: 登录密码
+        example: "123456"
+        type: string
+      username:
+        description: 登录账号
+        example: zhangsan
+        type: string
+    type: object
+  internal_handler.RegisterRequest:
+    properties:
+      email:
+        description: 邮箱
+        example: zhangsan@example.com
+        type: string
+      nickname:
+        description: 昵称/姓名
+        example: 张三
+        type: string
+      password:
+        description: 登录密码
+        example: "123456"
+        type: string
+      phone:
+        description: 手机号
+        example: "13800138000"
+        type: string
+      username:
+        description: 登录账号
+        example: zhangsan
+        type: string
+    type: object
+  internal_handler.SaveVersionRequest:
+    properties:
+      change_summary:
+        type: string
+      document_content:
+        additionalProperties: true
+        type: object
+    type: object
+  internal_handler.createShareRequest:
+    properties:
+      expire_hours:
+        example: 24
+        type: integer
+      permission:
+        example: 1
+        type: integer
+    type: object
+  internal_handler.joinShareRequest:
+    properties:
+      name:
+        example: 张三
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: 心智协同合同协作系统 V1 后端接口文档
+  title: 心智协同合同协作系统 API
+  version: "1.0"
+paths:
+  /api/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: 校验用户名和密码，登录成功返回 JWT
+      parameters:
+      - description: 登录参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 登录成功
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "401":
+          description: 用户名或密码错误
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      summary: 用户登录
+      tags:
+      - 认证
+  /api/auth/me:
+    get:
+      consumes:
+      - application/json
+      description: 通过 JWT 获取当前登录用户信息
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 当前用户信息
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "401":
+          description: 未登录或 token 失效
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      security:
+      - BearerAuth: []
+      summary: 获取当前用户
+      tags:
+      - 认证
+  /api/auth/register:
+    post:
+      consumes:
+      - application/json
+      description: 注册一个新的系统用户，用户名唯一，密码使用 bcrypt 加密保存
+      parameters:
+      - description: 注册参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 注册成功
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "400":
+          description: 请求参数错误
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "409":
+          description: 用户名已存在
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      summary: 用户注册
+      tags:
+      - 认证
+  /api/contracts:
+    get:
+      consumes:
+      - application/json
+      description: 分页查询当前登录用户的合同列表，支持按合同名称/编号、状态、客户名称筛选
+      parameters:
+      - default: 1
+        description: 页码，默认 1
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量，默认 10，最大 100
+        in: query
+        name: page_size
+        type: integer
+      - description: 合同名称或合同编号关键字
+        in: query
+        name: keyword
+        type: string
+      - description: 合同状态：0已导入 1已分享 2协作中 3已确认 4已完成 5已取消
+        in: query
+        name: status
+        type: integer
+      - description: 客户名称
+        in: query
+        name: customer_name
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 分页合同列表
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "401":
+          description: 未登录
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      security:
+      - BearerAuth: []
+      summary: 合同列表
+      tags:
+      - 合同
+    post:
+      consumes:
+      - multipart/form-data
+      description: 上传 DOCX 文件创建合同，文件保存到阿里云 OSS，并自动生成 V1 合同版本
+      parameters:
+      - description: 合同名称
+        in: formData
+        name: contract_name
+        required: true
+        type: string
+      - description: DOCX 文件，仅支持 .docx
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: 合同备注
+        in: formData
+        name: description
+        type: string
+      - description: 客户名称/公司名称
+        in: formData
+        name: customer_name
+        type: string
+      - description: 客户联系人
+        in: formData
+        name: customer_contact
+        type: string
+      - description: 客户联系电话
+        in: formData
+        name: customer_phone
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 创建成功
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "400":
+          description: 参数错误或文件不合法
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "401":
+          description: 未登录
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      security:
+      - BearerAuth: []
+      summary: 创建合同
+      tags:
+      - 合同
+  /api/contracts/{id}:
+    get:
+      consumes:
+      - application/json
+      description: 获取当前用户创建的合同详情，包含当前版本信息
+      parameters:
+      - description: 合同ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 合同详情
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "401":
+          description: 未登录
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "404":
+          description: 合同不存在或无权访问
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      security:
+      - BearerAuth: []
+      summary: 合同详情
+      tags:
+      - 合同
+  /api/contracts/{id}/changes:
+    get:
+      consumes:
+      - application/json
+      description: 分页查询合同版本之间的变更记录
+      parameters:
+      - description: 合同ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - default: 1
+        description: 页码，默认 1
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量，默认 20，最大 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 分页变更记录
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "401":
+          description: 未登录
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "404":
+          description: 合同不存在或无权访问
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      security:
+      - BearerAuth: []
+      summary: 变更记录列表
+      tags:
+      - 合同版本
+  /api/contracts/{id}/confirm:
+    post:
+      description: 内部用户确认当前版本
+      parameters:
+      - description: 合同ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 确认成功
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "404":
+          description: 合同不存在或无权访问
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      security:
+      - BearerAuth: []
+      summary: 内部用户确认合同
+      tags:
+      - 确认
+  /api/contracts/{id}/confirmations:
+    get:
+      description: 查看合同的确认记录
+      parameters:
+      - description: 合同ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 确认记录
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      security:
+      - BearerAuth: []
+      summary: 查看确认记录
+      tags:
+      - 确认
+  /api/contracts/{id}/download:
+    get:
+      description: 下载当前版本渲染后的 DOCX，内置水印
+      parameters:
+      - description: 合同ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      responses:
+        "200":
+          description: DOCX 文件
+          schema:
+            type: file
+        "404":
+          description: 合同不存在或无权访问
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      security:
+      - BearerAuth: []
+      summary: 下载最终 DOCX
+      tags:
+      - 下载
+  /api/contracts/{id}/share:
+    post:
+      consumes:
+      - application/json
+      description: 为合同生成外部协作者分享链接
+      parameters:
+      - description: 合同ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 分享参数
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.createShareRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 分享链接
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "404":
+          description: 合同不存在或无权访问
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      security:
+      - BearerAuth: []
+      summary: 创建分享链接
+      tags:
+      - 分享协作
+  /api/contracts/{id}/share/{shareId}/disable:
+    post:
+      description: 使分享链接失效
+      parameters:
+      - description: 合同ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 分享记录ID
+        in: path
+        name: shareId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已失效
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      security:
+      - BearerAuth: []
+      summary: 失效分享链接
+      tags:
+      - 分享协作
+  /api/contracts/{id}/versions:
+    get:
+      consumes:
+      - application/json
+      description: 分页查询合同版本列表
+      parameters:
+      - description: 合同ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - default: 1
+        description: 页码，默认 1
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量，默认 10，最大 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 分页版本列表
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "401":
+          description: 未登录
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "404":
+          description: 合同不存在或无权访问
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      security:
+      - BearerAuth: []
+      summary: 版本列表
+      tags:
+      - 合同版本
+    post:
+      consumes:
+      - application/json
+      description: 提交编辑后的结构化文档，自动生成新版本并记录变更
+      parameters:
+      - description: 合同ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 新版本内容
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.SaveVersionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 保存成功
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "401":
+          description: 未登录
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "404":
+          description: 合同不存在或无权访问
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "422":
+          description: 文档对比失败
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      security:
+      - BearerAuth: []
+      summary: 保存新版本
+      tags:
+      - 合同版本
+  /api/contracts/{id}/versions/{versionId}:
+    get:
+      consumes:
+      - application/json
+      description: 获取指定历史版本的完整结构化内容
+      parameters:
+      - description: 合同ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 版本ID
+        in: path
+        name: versionId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 版本详情
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "401":
+          description: 未登录
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "404":
+          description: 合同不存在、无权访问或版本不存在
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      security:
+      - BearerAuth: []
+      summary: 版本详情
+      tags:
+      - 合同版本
+  /api/health:
+    get:
+      description: 返回 /api 分组下的服务健康状态
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ok
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      summary: API 健康检查
+      tags:
+      - 系统
+  /api/share/{token}:
+    get:
+      description: 外部用户通过 token 获取合同概要
+      parameters:
+      - description: 分享Token
+        in: path
+        name: token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 分享概要
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "404":
+          description: 分享链接不存在或已失效
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      summary: 获取分享概要
+      tags:
+      - 分享协作
+  /api/share/{token}/changes:
+    get:
+      description: 外部协作者查看变更记录
+      parameters:
+      - description: 分享Token
+        in: path
+        name: token
+        required: true
+        type: string
+      - description: 协作者姓名
+        in: query
+        name: collaborator_name
+        required: true
+        type: string
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 变更记录
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      summary: 外部变更记录
+      tags:
+      - 分享协作
+  /api/share/{token}/confirm:
+    post:
+      consumes:
+      - application/json
+      description: 外部协作者确认当前版本
+      parameters:
+      - description: 分享Token
+        in: path
+        name: token
+        required: true
+        type: string
+      - description: 协作者姓名
+        in: query
+        name: collaborator_name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 确认成功
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      summary: 外部协作者确认合同
+      tags:
+      - 确认
+  /api/share/{token}/confirmations:
+    get:
+      description: 外部协作者查看确认记录
+      parameters:
+      - description: 分享Token
+        in: path
+        name: token
+        required: true
+        type: string
+      - description: 协作者姓名
+        in: query
+        name: collaborator_name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 确认记录
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      summary: 外部查看确认记录
+      tags:
+      - 确认
+  /api/share/{token}/contract:
+    get:
+      description: 外部协作者获取合同当前版本内容
+      parameters:
+      - description: 分享Token
+        in: path
+        name: token
+        required: true
+        type: string
+      - description: 协作者姓名
+        in: query
+        name: collaborator_name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 合同内容
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "403":
+          description: 协作者不存在
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      summary: 外部获取合同内容
+      tags:
+      - 分享协作
+  /api/share/{token}/download:
+    get:
+      description: 外部协作者下载当前版本渲染后的 DOCX，内置水印
+      parameters:
+      - description: 分享Token
+        in: path
+        name: token
+        required: true
+        type: string
+      - description: 协作者姓名
+        in: query
+        name: collaborator_name
+        required: true
+        type: string
+      produces:
+      - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      responses:
+        "200":
+          description: DOCX 文件
+          schema:
+            type: file
+      summary: 外部下载最终 DOCX
+      tags:
+      - 下载
+  /api/share/{token}/join:
+    post:
+      consumes:
+      - application/json
+      description: 外部用户输入姓名加入合同协作
+      parameters:
+      - description: 分享Token
+        in: path
+        name: token
+        required: true
+        type: string
+      - description: 姓名
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.joinShareRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 协作者信息
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      summary: 外部协作者加入
+      tags:
+      - 分享协作
+  /api/share/{token}/versions:
+    get:
+      description: 外部协作者分页查看合同版本列表
+      parameters:
+      - description: 分享Token
+        in: path
+        name: token
+        required: true
+        type: string
+      - description: 协作者姓名
+        in: query
+        name: collaborator_name
+        required: true
+        type: string
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 版本列表
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      summary: 外部版本列表
+      tags:
+      - 分享协作
+    post:
+      consumes:
+      - application/json
+      description: 外部协作者提交修改，生成新版本
+      parameters:
+      - description: 分享Token
+        in: path
+        name: token
+        required: true
+        type: string
+      - description: 协作者姓名
+        in: query
+        name: collaborator_name
+        required: true
+        type: string
+      - description: 新版本内容
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.SaveVersionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 保存成功
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+        "403":
+          description: 只读链接不可编辑
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      summary: 外部保存版本
+      tags:
+      - 分享协作
+  /api/share/{token}/versions/{versionId}:
+    get:
+      description: 外部协作者查看指定版本详情
+      parameters:
+      - description: 分享Token
+        in: path
+        name: token
+        required: true
+        type: string
+      - description: 版本ID
+        in: path
+        name: versionId
+        required: true
+        type: integer
+      - description: 协作者姓名
+        in: query
+        name: collaborator_name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 版本详情
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      summary: 外部版本详情
+      tags:
+      - 分享协作
+  /health:
+    get:
+      description: 返回 Go 服务基础运行状态，供部署探活使用
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ok
+          schema:
+            $ref: '#/definitions/github_com_lshc_contract-hub_backend_pkg_response.Body'
+      summary: 服务健康检查
+      tags:
+      - 系统
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
