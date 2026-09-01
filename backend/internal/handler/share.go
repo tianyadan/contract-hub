@@ -457,7 +457,8 @@ func writeShareError(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrInvalidInput),
 		errors.Is(err, service.ErrInvalidPdfInput),
 		errors.Is(err, service.ErrInvalidPdfHash),
-		errors.Is(err, service.ErrVerifyCodeMismatch):
+		errors.Is(err, service.ErrVerifyCodeMismatch),
+		errors.Is(err, service.ErrExportPdfTooLarge):
 		response.Error(c, http.StatusBadRequest, 40001, err.Error())
 	case errors.Is(err, service.ErrShareNotFound),
 		errors.Is(err, service.ErrShareDisabled),

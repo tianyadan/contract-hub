@@ -10,8 +10,8 @@ import (
 	"github.com/lshc/contract-hub/backend/internal/model"
 )
 
-// MaxExportPdfSize PDF 归档文件大小上限（50MB）。
-const MaxExportPdfSize = 50 << 20
+// MaxExportPdfSize PDF 归档文件大小上限（10MB，与前端压缩目标一致）。
+const MaxExportPdfSize = 10 << 20
 
 // 验真与 PDF 归档相关错误。
 var (
@@ -21,6 +21,7 @@ var (
 	ErrVerifyNotFound     = errors.New("验真码不存在")
 	ErrNoPdfArchived      = errors.New("该版本暂无 PDF 归档")
 	ErrAlreadyConfirmed   = errors.New("合同已确认，请勿重复操作")
+	ErrExportPdfTooLarge  = errors.New("PDF 文件大小不能超过 10MB")
 )
 
 // ExportPdfInfo PDF 归档元数据。
@@ -385,7 +386,7 @@ func validatePdfUpload(pdfData []byte, hash string, pageCount int) error {
 		return ErrInvalidPdfInput
 	}
 	if len(pdfData) > MaxExportPdfSize {
-		return ErrFileTooLarge
+		return ErrExportPdfTooLarge
 	}
 	if pageCount <= 0 {
 		return ErrInvalidPdfInput

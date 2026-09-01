@@ -398,6 +398,7 @@ func (s *ShareService) ShareSaveVersion(ctx context.Context, token, name string,
 	now := time.Now()
 	fromVersionID := int64(0)
 	oldDocJSON := ""
+	var previousVersion *model.ContractVersion
 	if contract.CurrentVersionID != nil {
 		fromVersionID = *contract.CurrentVersionID
 		currentVersion, err := s.contracts.GetVersionByID(ctx, contract.ID, fromVersionID)
@@ -406,6 +407,7 @@ func (s *ShareService) ShareSaveVersion(ctx context.Context, token, name string,
 		}
 		if currentVersion != nil {
 			oldDocJSON = currentVersion.DocumentContent
+			previousVersion = currentVersion
 		}
 	}
 
@@ -434,6 +436,7 @@ func (s *ShareService) ShareSaveVersion(ctx context.Context, token, name string,
 		ChangeSummary:   strings.TrimSpace(changeSummary),
 		CreateTime:      now,
 	}
+	inheritVersionFileMeta(version, previousVersion)
 
 	audit := &model.ContractAuditLog{
 		ID:             nextID(),

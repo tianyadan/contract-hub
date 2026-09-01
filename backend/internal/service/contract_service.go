@@ -408,6 +408,8 @@ func (s *ContractService) SaveVersion(ctx context.Context, input SaveVersionInpu
 		ChangeSummary:   strings.TrimSpace(input.ChangeSummary),
 		CreateTime:      now,
 	}
+	// 新版本继承上一版的 DOCX 归档信息，供「导入原文件参考」预览使用。
+	inheritVersionFileMeta(version, detail.Version)
 
 	audit := &model.ContractAuditLog{
 		ID:            nextID(),
@@ -912,20 +914,29 @@ func (s *ContractService) CreateFromTemplate(ctx context.Context, input CreateFr
 	}, nil
 }
 
-// PreviewDocx 下载合同当前版本 DOCX 用于高保真预览。
+// PreviewDocx 下载合同 DOCX 用于高保真预览（优先当前版本，回退至 V1 导入文件）。
 func (s *ContractService) PreviewDocx(ctx context.Context, contractID, userID int64) ([]byte, string, error) {
 	detail, err := s.contracts.GetDetailByOwner(ctx, contractID, userID)
 	if err != nil {
 		return nil, "", err
 	}
-	if detail == nil || detail.Version == nil || detail.Version.OssObjectKey == "" {
+	if detail == nil {
 		return nil, "", ErrContractNotFound
 	}
-	data, err := s.oss.Download(ctx, detail.Version.OssObjectKey)
+
+	objectKey, fileName := resolvePreviewDocxSource(ctx, s.contracts, contractID, detail.Version)
+	if objectKey == "" {
+		return nil, "", ErrVersionNotFound
+	}
+
+	data, err := s.oss.Download(ctx, objectKey)
 	if err != nil {
 		return nil, "", err
 	}
-	return data, detail.Version.FileName, nil
+	if fileName == "" {
+		fileName = "contract.docx"
+	}
+	return data, fileName, nil
 }
 
 // ExportPngPageItem 单页 PNG 归档信息。
