@@ -314,6 +314,7 @@ func (r *ContractRepository) GetDetailByOwner(ctx context.Context, contractID, o
 			v.file_name, v.file_size, v.file_hash,
 			v.document_content, v.change_summary,
 			v.export_png_oss_prefix, v.export_png_page_count, v.export_png_hash, v.exported_at,
+			v.export_pdf_oss_key, v.export_pdf_hash, v.export_pdf_page_count, v.pdf_exported_at, v.verify_code,
 			v.create_time
 		FROM contract c
 		LEFT JOIN contract_version v ON v.id = c.current_version_id
@@ -343,6 +344,11 @@ func (r *ContractRepository) GetDetailByOwner(ctx context.Context, contractID, o
 		exportPageCount sql.NullInt64
 		exportHash      sql.NullString
 		exportedAt      sql.NullTime
+		exportPdfKey    sql.NullString
+		exportPdfHash   sql.NullString
+		exportPdfPages  sql.NullInt64
+		pdfExportedAt   sql.NullTime
+		verifyCode      sql.NullString
 		versionTime     sql.NullTime
 	)
 
@@ -356,6 +362,7 @@ func (r *ContractRepository) GetDetailByOwner(ctx context.Context, contractID, o
 		&fileName, &fileSize, &fileHash,
 		&documentContent, &changeSummary,
 		&exportPrefix, &exportPageCount, &exportHash, &exportedAt,
+		&exportPdfKey, &exportPdfHash, &exportPdfPages, &pdfExportedAt, &verifyCode,
 		&versionTime,
 	)
 	if err != nil {
@@ -398,6 +405,138 @@ func (r *ContractRepository) GetDetailByOwner(ctx context.Context, contractID, o
 			t := exportedAt.Time
 			v.ExportedAt = &t
 		}
+		v.ExportPdfOssKey = exportPdfKey.String
+		v.ExportPdfHash = exportPdfHash.String
+		v.ExportPdfPageCount = int(exportPdfPages.Int64)
+		if pdfExportedAt.Valid {
+			t := pdfExportedAt.Time
+			v.PdfExportedAt = &t
+		}
+		v.VerifyCode = verifyCode.String
+		if versionTime.Valid {
+			v.CreateTime = versionTime.Time
+		}
+		d.Version = &v
+	}
+
+	return &d, nil
+}
+
+// GetDetailByContractID 查询合同详情（不校验 owner，用于分享场景）。
+func (r *ContractRepository) GetDetailByContractID(ctx context.Context, contractID int64) (*model.ContractDetail, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT
+			c.id, c.contract_no, c.contract_name, c.owner_user_id,
+			c.customer_name, c.customer_contact, c.customer_phone,
+			c.status, c.current_version_id, c.current_version_no,
+			c.description, c.confirmed_time, c.completed_time,
+			c.create_time, c.update_time,
+			v.id, v.version_no, v.oss_object_key, v.oss_url,
+			v.file_name, v.file_size, v.file_hash,
+			v.document_content, v.change_summary,
+			v.export_png_oss_prefix, v.export_png_page_count, v.export_png_hash, v.exported_at,
+			v.export_pdf_oss_key, v.export_pdf_hash, v.export_pdf_page_count, v.pdf_exported_at, v.verify_code,
+			v.create_time
+		FROM contract c
+		LEFT JOIN contract_version v ON v.id = c.current_version_id
+		WHERE c.id = ?
+	`, contractID)
+	return scanContractDetailRow(row)
+}
+
+// scanContractDetailRow 扫描合同详情查询结果。
+func scanContractDetailRow(row *sql.Row) (*model.ContractDetail, error) {
+	var (
+		d               model.ContractDetail
+		c               model.Contract
+		v               model.ContractVersion
+		customerName    sql.NullString
+		customerContact sql.NullString
+		customerPhone   sql.NullString
+		description     sql.NullString
+		confirmedTime   sql.NullTime
+		completedTime   sql.NullTime
+		versionID       sql.NullInt64
+		versionNo       sql.NullInt64
+		ossObjectKey    sql.NullString
+		ossURL          sql.NullString
+		fileName        sql.NullString
+		fileSize        sql.NullInt64
+		fileHash        sql.NullString
+		documentContent sql.NullString
+		changeSummary   sql.NullString
+		exportPrefix    sql.NullString
+		exportPageCount sql.NullInt64
+		exportHash      sql.NullString
+		exportedAt      sql.NullTime
+		exportPdfKey    sql.NullString
+		exportPdfHash   sql.NullString
+		exportPdfPages  sql.NullInt64
+		pdfExportedAt   sql.NullTime
+		verifyCode      sql.NullString
+		versionTime     sql.NullTime
+	)
+
+	err := row.Scan(
+		&c.ID, &c.ContractNo, &c.ContractName, &c.OwnerUserID,
+		&customerName, &customerContact, &customerPhone,
+		&c.Status, &c.CurrentVersionID, &c.CurrentVersionNo,
+		&description, &confirmedTime, &completedTime,
+		&c.CreateTime, &c.UpdateTime,
+		&versionID, &versionNo, &ossObjectKey, &ossURL,
+		&fileName, &fileSize, &fileHash,
+		&documentContent, &changeSummary,
+		&exportPrefix, &exportPageCount, &exportHash, &exportedAt,
+		&exportPdfKey, &exportPdfHash, &exportPdfPages, &pdfExportedAt, &verifyCode,
+		&versionTime,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	c.CustomerName = customerName.String
+	c.CustomerContact = customerContact.String
+	c.CustomerPhone = customerPhone.String
+	c.Description = description.String
+	if confirmedTime.Valid {
+		t := confirmedTime.Time
+		c.ConfirmedTime = &t
+	}
+	if completedTime.Valid {
+		t := completedTime.Time
+		c.CompletedTime = &t
+	}
+	d.Contract = c
+
+	if versionID.Valid {
+		v.ID = versionID.Int64
+		v.ContractID = c.ID
+		v.VersionNo = int(versionNo.Int64)
+		v.OssObjectKey = ossObjectKey.String
+		v.OssURL = ossURL.String
+		v.FileName = fileName.String
+		v.FileSize = fileSize.Int64
+		v.FileHash = fileHash.String
+		v.DocumentContent = documentContent.String
+		v.ChangeSummary = changeSummary.String
+		v.ExportPngOssPrefix = exportPrefix.String
+		v.ExportPngPageCount = int(exportPageCount.Int64)
+		v.ExportPngHash = exportHash.String
+		if exportedAt.Valid {
+			t := exportedAt.Time
+			v.ExportedAt = &t
+		}
+		v.ExportPdfOssKey = exportPdfKey.String
+		v.ExportPdfHash = exportPdfHash.String
+		v.ExportPdfPageCount = int(exportPdfPages.Int64)
+		if pdfExportedAt.Valid {
+			t := pdfExportedAt.Time
+			v.PdfExportedAt = &t
+		}
+		v.VerifyCode = verifyCode.String
 		if versionTime.Valid {
 			v.CreateTime = versionTime.Time
 		}
@@ -414,6 +553,7 @@ func (r *ContractRepository) GetFirstVersion(ctx context.Context, contractID int
 		       oss_object_key, oss_url, file_name, file_size, file_hash,
 		       document_content, change_summary,
 		       export_png_oss_prefix, export_png_page_count, export_png_hash, exported_at,
+		       export_pdf_oss_key, export_pdf_hash, export_pdf_page_count, pdf_exported_at, verify_code,
 		       create_time
 		FROM contract_version
 		WHERE contract_id = ? AND version_no = 1
@@ -428,6 +568,7 @@ func (r *ContractRepository) GetVersionByID(ctx context.Context, contractID, ver
 		       oss_object_key, oss_url, file_name, file_size, file_hash,
 		       document_content, change_summary,
 		       export_png_oss_prefix, export_png_page_count, export_png_hash, exported_at,
+		       export_pdf_oss_key, export_pdf_hash, export_pdf_page_count, pdf_exported_at, verify_code,
 		       create_time
 		FROM contract_version
 		WHERE id = ? AND contract_id = ?
@@ -656,6 +797,119 @@ func (r *ContractRepository) UpdateVersionExportPng(
 	return err
 }
 
+// SetVersionVerifyCode 为当前版本预分配验真码（确认前生成二维码用）。
+func (r *ContractRepository) SetVersionVerifyCode(ctx context.Context, versionID int64, verifyCode string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE contract_version SET verify_code = ? WHERE id = ?
+	`, verifyCode, versionID)
+	return err
+}
+
+// UpdateVersionExportPdf 更新版本 PDF 终稿归档信息（草稿或终稿）。
+func (r *ContractRepository) UpdateVersionExportPdf(
+	ctx context.Context,
+	versionID int64,
+	ossKey, hash string,
+	pageCount int,
+	exportedAt time.Time,
+	verifyCode string,
+) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE contract_version
+		SET export_pdf_oss_key = ?, export_pdf_hash = ?, export_pdf_page_count = ?,
+		    pdf_exported_at = ?, verify_code = COALESCE(NULLIF(?, ''), verify_code)
+		WHERE id = ?
+	`, ossKey, hash, pageCount, exportedAt, verifyCode, versionID)
+	return err
+}
+
+// GetVersionByVerifyCode 通过验真码查询版本与合同信息。
+func (r *ContractRepository) GetVersionByVerifyCode(ctx context.Context, verifyCode string) (*model.VerifyContractRow, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT c.id, c.contract_no, c.contract_name, c.status, c.confirmed_time,
+		       v.id, v.version_no, v.export_pdf_oss_key, v.export_pdf_hash,
+		       v.export_pdf_page_count, v.pdf_exported_at, v.verify_code
+		FROM contract_version v
+		INNER JOIN contract c ON c.id = v.contract_id
+		WHERE v.verify_code = ?
+	`, verifyCode)
+
+	var item model.VerifyContractRow
+	var confirmedTime sql.NullTime
+	var pdfExportedAt sql.NullTime
+	err := row.Scan(
+		&item.ContractID, &item.ContractNo, &item.ContractName, &item.ContractStatus, &confirmedTime,
+		&item.VersionID, &item.VersionNo, &item.ExportPdfOssKey, &item.ExportPdfHash,
+		&item.ExportPdfPageCount, &pdfExportedAt, &item.VerifyCode,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if confirmedTime.Valid {
+		t := confirmedTime.Time
+		item.ConfirmedTime = &t
+	}
+	if pdfExportedAt.Valid {
+		t := pdfExportedAt.Time
+		item.PdfExportedAt = &t
+	}
+	return &item, nil
+}
+
+// FinalizeConfirmWithPdf 事务：写入 PDF 归档、确认记录、合同锁定。
+func (r *ContractRepository) FinalizeConfirmWithPdf(
+	ctx context.Context,
+	versionID, contractID int64,
+	ossKey, hash string,
+	pageCount int,
+	exportedAt time.Time,
+	verifyCode string,
+	confirmation *model.ContractConfirmation,
+) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE contract_version
+		SET export_pdf_oss_key = ?, export_pdf_hash = ?, export_pdf_page_count = ?,
+		    pdf_exported_at = ?, verify_code = ?
+		WHERE id = ? AND contract_id = ?
+	`, ossKey, hash, pageCount, exportedAt, verifyCode, versionID, contractID)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO contract_confirmation (
+			id, contract_id, version_id, user_id, collaborator_id,
+			confirmer_name, confirmer_type, confirm_status,
+			confirm_ip, user_agent, confirm_time, create_time
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, confirmation.ID, confirmation.ContractID, confirmation.VersionID,
+		confirmation.UserID, confirmation.CollaboratorID,
+		nullString(confirmation.ConfirmerName), confirmation.ConfirmerType, confirmation.ConfirmStatus,
+		nullString(confirmation.ConfirmIP), nullString(confirmation.UserAgent),
+		confirmation.ConfirmTime, confirmation.CreateTime)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE contract SET status = 3, confirmed_time = ? WHERE id = ?
+	`, exportedAt, contractID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 // scanVersion 扫描一行 contract_version 数据。
 func scanVersion(row *sql.Row) (*model.ContractVersion, error) {
 	var (
@@ -671,12 +925,18 @@ func scanVersion(row *sql.Row) (*model.ContractVersion, error) {
 		exportPageCount sql.NullInt64
 		exportHash      sql.NullString
 		exportedAt      sql.NullTime
+		exportPdfKey    sql.NullString
+		exportPdfHash   sql.NullString
+		exportPdfPages  sql.NullInt64
+		pdfExportedAt   sql.NullTime
+		verifyCode      sql.NullString
 	)
 	err := row.Scan(
 		&v.ID, &v.ContractID, &v.VersionNo, &v.CreatedBy,
 		&ossObjectKey, &ossURL, &fileName, &fileSize, &fileHash,
 		&documentContent, &changeSummary,
 		&exportPrefix, &exportPageCount, &exportHash, &exportedAt,
+		&exportPdfKey, &exportPdfHash, &exportPdfPages, &pdfExportedAt, &verifyCode,
 		&v.CreateTime,
 	)
 	if err != nil {
@@ -699,6 +959,14 @@ func scanVersion(row *sql.Row) (*model.ContractVersion, error) {
 		t := exportedAt.Time
 		v.ExportedAt = &t
 	}
+	v.ExportPdfOssKey = exportPdfKey.String
+	v.ExportPdfHash = exportPdfHash.String
+	v.ExportPdfPageCount = int(exportPdfPages.Int64)
+	if pdfExportedAt.Valid {
+		t := pdfExportedAt.Time
+		v.PdfExportedAt = &t
+	}
+	v.VerifyCode = verifyCode.String
 	return &v, nil
 }
 

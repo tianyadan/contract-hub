@@ -43,7 +43,28 @@ type ContractVersion struct {
 	ExportPngPageCount int
 	ExportPngHash      string
 	ExportedAt         *time.Time
-	CreateTime      time.Time
+	ExportPdfOssKey    string
+	ExportPdfHash      string
+	ExportPdfPageCount int
+	PdfExportedAt      *time.Time
+	VerifyCode         string
+	CreateTime         time.Time
+}
+
+// VerifyContractRow 扫码验真查询结果（版本 + 合同主信息）。
+type VerifyContractRow struct {
+	ContractID       int64
+	ContractNo       string
+	ContractName     string
+	ContractStatus   int8
+	ConfirmedTime    *time.Time
+	VersionID        int64
+	VersionNo        int
+	ExportPdfOssKey  string
+	ExportPdfHash    string
+	ExportPdfPageCount int
+	PdfExportedAt    *time.Time
+	VerifyCode       string
 }
 
 // ContractDetail 合同详情，包含合同主信息及其当前版本信息。

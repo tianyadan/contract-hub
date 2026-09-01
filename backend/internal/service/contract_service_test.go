@@ -7,7 +7,7 @@ import (
 )
 
 func TestDeleteRejectsInvalidContractID(t *testing.T) {
-	svc := NewContractService(nil, nil, nil, nil, nil)
+	svc := NewContractService(nil, nil, nil, nil, nil, nil, "")
 
 	err := svc.Delete(context.Background(), 0, 1001, "owner", "127.0.0.1", "go-test")
 
@@ -17,7 +17,7 @@ func TestDeleteRejectsInvalidContractID(t *testing.T) {
 }
 
 func TestBatchDeleteRejectsEmptyContractIDs(t *testing.T) {
-	svc := NewContractService(nil, nil, nil, nil, nil)
+	svc := NewContractService(nil, nil, nil, nil, nil, nil, "")
 
 	err := svc.BatchDelete(context.Background(), BatchDeleteContractsInput{
 		ContractIDs: []int64{},
@@ -33,7 +33,7 @@ func TestBatchDeleteRejectsEmptyContractIDs(t *testing.T) {
 }
 
 func TestBatchDeleteRejectsInvalidContractID(t *testing.T) {
-	svc := NewContractService(nil, nil, nil, nil, nil)
+	svc := NewContractService(nil, nil, nil, nil, nil, nil, "")
 
 	err := svc.BatchDelete(context.Background(), BatchDeleteContractsInput{
 		ContractIDs: []int64{10001, -1},

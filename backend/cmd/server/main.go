@@ -53,18 +53,19 @@ func main() {
 	contractRepo := repository.NewContractRepository(db)
 	templateRepo := repository.NewTemplateRepository(db)
 	customerRepo := repository.NewCustomerRepository(db)
+	shareRepo := repository.NewShareRepository(db)
 
 	templateService := service.NewTemplateService(templateRepo, ossClient, docEngineClient)
 	customerService := service.NewCustomerService(customerRepo, contractRepo)
-	contractService := service.NewContractService(contractRepo, templateRepo, customerRepo, ossClient, docEngineClient)
+	contractService := service.NewContractService(contractRepo, templateRepo, customerRepo, shareRepo, ossClient, docEngineClient, cfg.PublicWebOrigin)
 
 	contractHandler := handler.NewContractHandler(contractService)
 	templateHandler := handler.NewTemplateHandler(templateService)
 	customerHandler := handler.NewCustomerHandler(customerService, contractService)
 
-	shareRepo := repository.NewShareRepository(db)
-	shareService := service.NewShareService(shareRepo, contractRepo, docEngineClient, ossClient)
+	shareService := service.NewShareService(shareRepo, contractRepo, docEngineClient, ossClient, contractService)
 	shareHandler := handler.NewShareHandler(shareService)
+	publicHandler := handler.NewPublicHandler(contractService)
 
 	// 初始化 WebSocket 在线状态 Hub
 	wsHub := ws.NewHub()
@@ -72,7 +73,7 @@ func main() {
 	shareWSHandler := ws.ServeShare(wsHub, shareService)
 
 	// 5. 初始化 Gin 引擎并注册路由
-	r := router.New(cfg, authHandler, contractHandler, templateHandler, customerHandler, shareHandler, internalWSHandler, shareWSHandler)
+	r := router.New(cfg, authHandler, contractHandler, templateHandler, customerHandler, shareHandler, publicHandler, internalWSHandler, shareWSHandler)
 
 	// 6. 启动 HTTP 服务
 	log.Printf("contract-hub backend server listening on :%s", cfg.ServerPort)

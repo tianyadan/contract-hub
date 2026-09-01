@@ -30,19 +30,27 @@ var (
 
 // ShareService 分享链接、外部协作者和确认业务逻辑。
 type ShareService struct {
-	shares    *repository.ShareRepository
-	contracts *repository.ContractRepository
-	docEngine *docengine.Client
-	oss       *oss.Client
+	shares      *repository.ShareRepository
+	contracts   *repository.ContractRepository
+	docEngine   *docengine.Client
+	oss         *oss.Client
+	contractSvc *ContractService
 }
 
 // NewShareService 创建分享服务。
-func NewShareService(shares *repository.ShareRepository, contracts *repository.ContractRepository, docEngine *docengine.Client, ossClient *oss.Client) *ShareService {
+func NewShareService(
+	shares *repository.ShareRepository,
+	contracts *repository.ContractRepository,
+	docEngine *docengine.Client,
+	ossClient *oss.Client,
+	contractSvc *ContractService,
+) *ShareService {
 	return &ShareService{
-		shares:    shares,
-		contracts: contracts,
-		docEngine: docEngine,
-		oss:       ossClient,
+		shares:      shares,
+		contracts:   contracts,
+		docEngine:   docEngine,
+		oss:         ossClient,
+		contractSvc: contractSvc,
 	}
 }
 
@@ -459,69 +467,62 @@ func (s *ShareService) ShareSaveVersion(ctx context.Context, token, name string,
 	}, nil
 }
 
-// Confirm 确认当前版本。
-func (s *ShareService) Confirm(ctx context.Context, contractID, userID int64, name string, isExternal bool, ip, userAgent string) error {
-	var (
-		contractIDVal = contractID
-		versionID     int64
-		userIDPtr     *int64
-		confirmerName string
-		confirmerType int8
-	)
-
-	if isExternal {
-		// 外部确认通过 token 进入，但 Confirm 接口单独处理
-		return errors.New("external confirm should use token based method")
-	}
-
-	detail, err := s.contracts.GetDetailByOwner(ctx, contractIDVal, userID)
+// ConfirmWithPdf 内部用户确认当前版本并归档终稿 PDF。
+func (s *ShareService) ConfirmWithPdf(
+	ctx context.Context,
+	contractID, userID int64,
+	name string,
+	ip, userAgent string,
+	input ConfirmPdfInput,
+) error {
+	detail, err := s.contracts.GetDetailByOwner(ctx, contractID, userID)
 	if err != nil {
 		return err
 	}
 	if detail == nil {
 		return ErrContractNotFound
 	}
+	if detail.Contract.Status == 3 || detail.Contract.Status == 4 {
+		return ErrAlreadyConfirmed
+	}
 	if detail.Contract.CurrentVersionID == nil {
 		return errors.New("合同还没有版本")
 	}
-	versionID = *detail.Contract.CurrentVersionID
-	userIDVal := userID
-	userIDPtr = &userIDVal
-	confirmerName = name
-	confirmerType = 0
 
 	now := time.Now()
+	userIDVal := userID
 	confirmation := &model.ContractConfirmation{
 		ID:            nextID(),
-		ContractID:    contractIDVal,
-		VersionID:     versionID,
-		UserID:        userIDPtr,
-		ConfirmerName: confirmerName,
-		ConfirmerType: confirmerType,
+		ContractID:    contractID,
+		VersionID:     *detail.Contract.CurrentVersionID,
+		UserID:        &userIDVal,
+		ConfirmerName: name,
+		ConfirmerType: 0,
 		ConfirmStatus: 1,
 		ConfirmIP:     ip,
 		UserAgent:     userAgent,
 		ConfirmTime:   now,
 		CreateTime:    now,
 	}
-	if err := s.shares.CreateConfirmation(ctx, confirmation); err != nil {
-		return err
-	}
-
-	// 内部确认后合同状态变为已确认
-	_ = s.contracts.UpdateContractStatus(ctx, contractIDVal, 3)
-	return nil
+	return s.contractSvc.FinalizeConfirmWithPdfArchive(ctx, contractID, *detail.Contract.CurrentVersionID, input, confirmation)
 }
 
-// ShareConfirm 外部协作者确认当前版本。
-func (s *ShareService) ShareConfirm(ctx context.Context, token, name, ip, userAgent string) error {
-	share, contract, err := s.validateShare(ctx, token)
+// ShareConfirmWithPdf 外部协作者确认当前版本并归档终稿 PDF。
+func (s *ShareService) ShareConfirmWithPdf(
+	ctx context.Context,
+	token, name, ip, userAgent string,
+	input ConfirmPdfInput,
+) error {
+	_, contract, err := s.validateShare(ctx, token)
 	if err != nil {
 		return err
 	}
 	collaborator, err := s.getCollaborator(ctx, contract.ID, name)
 	if err != nil {
 		return err
+	}
+	if contract.Status == 3 || contract.Status == 4 {
+		return ErrAlreadyConfirmed
 	}
 	if contract.CurrentVersionID == nil {
 		return errors.New("合同还没有版本")
@@ -542,14 +543,39 @@ func (s *ShareService) ShareConfirm(ctx context.Context, token, name, ip, userAg
 		ConfirmTime:    now,
 		CreateTime:     now,
 	}
-	if err := s.shares.CreateConfirmation(ctx, confirmation); err != nil {
-		return err
-	}
+	return s.contractSvc.FinalizeConfirmWithPdfArchive(ctx, contract.ID, *contract.CurrentVersionID, input, confirmation)
+}
 
-	// 外部确认后合同状态变为已确认
-	_ = s.contracts.UpdateContractStatus(ctx, contract.ID, 3)
-	_ = share
-	return nil
+// PrepareShareFinalExport 外部分享页预分配验真码。
+func (s *ShareService) PrepareShareFinalExport(ctx context.Context, token, name string) (*PrepareFinalExportResult, error) {
+	_, contract, err := s.validateShare(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.getCollaborator(ctx, contract.ID, name); err != nil {
+		return nil, err
+	}
+	return s.contractSvc.PrepareFinalExportByContract(ctx, contract.ID)
+}
+
+// ShareUploadExportPdf 外部分享页上传 PDF 草稿归档。
+func (s *ShareService) ShareUploadExportPdf(
+	ctx context.Context,
+	token, name string,
+	pdfData []byte,
+	hash string,
+	pageCount int,
+	verifyCode string,
+	draft bool,
+) (*ExportPdfInfo, error) {
+	_, contract, err := s.validateShare(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.getCollaborator(ctx, contract.ID, name); err != nil {
+		return nil, err
+	}
+	return s.contractSvc.UploadExportPdfByContract(ctx, contract.ID, pdfData, hash, pageCount, verifyCode, draft)
 }
 
 // ListConfirmations 查询确认记录（内部用户，带 owner 权限校验）。

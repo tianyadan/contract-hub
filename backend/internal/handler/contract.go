@@ -467,21 +467,105 @@ func (h *ContractHandler) GetExportPng(c *gin.Context) {
 	response.Success(c, http.StatusOK, "ok", result)
 }
 
+// PrepareFinalExport 确认前预分配验真码。
+func (h *ContractHandler) PrepareFinalExport(c *gin.Context) {
+	contractID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || contractID <= 0 {
+		response.Error(c, http.StatusBadRequest, 40001, "合同ID不合法")
+		return
+	}
+	result, err := h.svc.PrepareFinalExport(c.Request.Context(), contractID, middleware.GetUserID(c))
+	if err != nil {
+		writeContractError(c, err)
+		return
+	}
+	response.Success(c, http.StatusOK, "ok", result)
+}
+
+// ExportPdf 上传 PDF 终稿或草稿归档。
+func (h *ContractHandler) ExportPdf(c *gin.Context) {
+	contractID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || contractID <= 0 {
+		response.Error(c, http.StatusBadRequest, 40001, "合同ID不合法")
+		return
+	}
+	form, err := parsePdfUploadForm(c)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, 40001, err.Error())
+		return
+	}
+	result, err := h.svc.UploadExportPdf(
+		c.Request.Context(),
+		contractID,
+		middleware.GetUserID(c),
+		form.Data,
+		form.Hash,
+		form.PageCount,
+		form.VerifyCode,
+		form.Draft,
+	)
+	if err != nil {
+		writeContractError(c, err)
+		return
+	}
+	response.Success(c, http.StatusOK, "ok", result)
+}
+
+// GetExportPdf 获取当前版本 PDF 归档信息。
+func (h *ContractHandler) GetExportPdf(c *gin.Context) {
+	contractID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || contractID <= 0 {
+		response.Error(c, http.StatusBadRequest, 40001, "合同ID不合法")
+		return
+	}
+	result, err := h.svc.GetExportPdf(c.Request.Context(), contractID, middleware.GetUserID(c))
+	if err != nil {
+		writeContractError(c, err)
+		return
+	}
+	response.Success(c, http.StatusOK, "ok", result)
+}
+
+// GetVersionExportPdf 获取历史版本 PDF 归档信息。
+func (h *ContractHandler) GetVersionExportPdf(c *gin.Context) {
+	contractID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || contractID <= 0 {
+		response.Error(c, http.StatusBadRequest, 40001, "合同ID不合法")
+		return
+	}
+	versionID, err := strconv.ParseInt(c.Param("versionId"), 10, 64)
+	if err != nil || versionID <= 0 {
+		response.Error(c, http.StatusBadRequest, 40001, "版本ID不合法")
+		return
+	}
+	result, err := h.svc.GetVersionExportPdf(c.Request.Context(), contractID, versionID, middleware.GetUserID(c))
+	if err != nil {
+		writeContractError(c, err)
+		return
+	}
+	response.Success(c, http.StatusOK, "ok", result)
+}
+
 // writeContractError 将合同 service 层错误转换为统一 HTTP 响应。
 func writeContractError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrInvalidContractInput),
 		errors.Is(err, service.ErrInvalidFileType),
 		errors.Is(err, service.ErrEmptyFile),
-		errors.Is(err, service.ErrFileTooLarge):
+		errors.Is(err, service.ErrFileTooLarge),
+		errors.Is(err, service.ErrInvalidPdfInput),
+		errors.Is(err, service.ErrInvalidPdfHash),
+		errors.Is(err, service.ErrVerifyCodeMismatch):
 		response.Error(c, http.StatusBadRequest, 40001, err.Error())
 	case errors.Is(err, service.ErrContractNotFound):
 		response.Error(c, http.StatusNotFound, 40401, err.Error())
-	case errors.Is(err, service.ErrContractLocked):
+	case errors.Is(err, service.ErrContractLocked),
+		errors.Is(err, service.ErrAlreadyConfirmed):
 		response.Error(c, http.StatusForbidden, 40301, err.Error())
 	case errors.Is(err, service.ErrDocParseFailed):
 		response.Error(c, http.StatusUnprocessableEntity, 42201, err.Error())
-	case errors.Is(err, service.ErrVersionNotFound):
+	case errors.Is(err, service.ErrVersionNotFound),
+		errors.Is(err, service.ErrNoPdfArchived):
 		response.Error(c, http.StatusNotFound, 40401, err.Error())
 	default:
 		// 记录具体错误到服务端日志，便于排查 500 问题；不要把内部错误直接返回给前端

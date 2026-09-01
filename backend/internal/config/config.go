@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -17,6 +18,7 @@ type Config struct {
 	JWTSecret        string // JWT 签名密钥
 	JWTExpireHours   int    // JWT 有效期（小时）
 	DocEngineBaseURL string // Python 文档服务地址
+	PublicWebOrigin  string // 前端公开访问域名（二维码验真链接）
 	OSS              OSSConfig
 }
 
@@ -42,6 +44,7 @@ func Load() *Config {
 		JWTSecret:        getEnv("JWT_SECRET", "dev-secret"),
 		JWTExpireHours:   getEnvInt("JWT_EXPIRE_HOURS", 24),
 		DocEngineBaseURL: getEnv("DOC_ENGINE_BASE_URL", "http://127.0.0.1:9002"),
+		PublicWebOrigin:  strings.TrimRight(getEnv("PUBLIC_WEB_ORIGIN", "http://localhost:5173"), "/"),
 		OSS: OSSConfig{
 			Endpoint:        getEnv("OSS_ENDPOINT", ""),
 			AccessKeyID:     getEnv("OSS_ACCESS_KEY_ID", ""),

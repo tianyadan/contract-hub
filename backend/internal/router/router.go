@@ -19,6 +19,7 @@ func New(
 	templateHandler *handler.TemplateHandler,
 	customerHandler *handler.CustomerHandler,
 	shareHandler *handler.ShareHandler,
+	publicHandler *handler.PublicHandler,
 	internalWSHandler, shareWSHandler gin.HandlerFunc,
 ) *gin.Engine {
 	// 根据环境变量设置 Gin 模式，便于本地 debug / 线上 release 切换
@@ -40,6 +41,9 @@ func New(
 	api := r.Group("/api")
 	{
 		api.GET("/health", handler.APIHealth(cfg))
+
+		// 公开验真（无需 JWT）
+		api.GET("/public/verify/:code", publicHandler.VerifyContract)
 
 		// 认证相关接口
 		authGroup := api.Group("/auth")
@@ -94,8 +98,12 @@ func New(
 			// 分享与确认
 			contracts.POST("/:id/share", shareHandler.CreateShare)
 			contracts.POST("/:id/share/:shareId/disable", shareHandler.DisableShare)
+			contracts.POST("/:id/prepare-final-export", contractHandler.PrepareFinalExport)
 			contracts.POST("/:id/confirm", shareHandler.Confirm)
 			contracts.GET("/:id/confirmations", shareHandler.ListConfirmations)
+			contracts.POST("/:id/export-pdf", contractHandler.ExportPdf)
+			contracts.GET("/:id/export-pdf", contractHandler.GetExportPdf)
+			contracts.GET("/:id/versions/:versionId/export-pdf", contractHandler.GetVersionExportPdf)
 			contracts.POST("/:id/export-png", contractHandler.ExportPng)
 			contracts.GET("/:id/export-png", contractHandler.GetExportPng)
 		}
@@ -110,6 +118,8 @@ func New(
 			share.GET("/:token/versions/:versionId", shareHandler.ShareVersionDetail)
 			share.POST("/:token/versions", shareHandler.ShareSaveVersion)
 			share.GET("/:token/changes", shareHandler.ShareChangeList)
+			share.POST("/:token/prepare-final-export", shareHandler.SharePrepareFinalExport)
+			share.POST("/:token/export-pdf", shareHandler.ShareExportPdf)
 			share.POST("/:token/confirm", shareHandler.ShareConfirm)
 			share.GET("/:token/confirmations", shareHandler.ShareListConfirmations)
 			share.GET("/:token/ws", shareWSHandler)

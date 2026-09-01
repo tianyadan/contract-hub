@@ -58,6 +58,18 @@ func (c *Client) CopyObject(ctx context.Context, srcKey, destKey string) error {
 	return nil
 }
 
+// SignURL 生成带过期时间的签名下载 URL。
+func (c *Client) SignURL(objectKey string, expireSeconds int64) (string, error) {
+	if expireSeconds <= 0 {
+		expireSeconds = 900
+	}
+	url, err := c.bucket.SignURL(objectKey, aliyunoss.HTTPGet, expireSeconds)
+	if err != nil {
+		return "", fmt.Errorf("sign oss url failed: %w", err)
+	}
+	return url, nil
+}
+
 // PublicURL 根据 object key 生成公开访问 URL。
 func (c *Client) PublicURL(objectKey string) string {
 	return fmt.Sprintf("%s/%s", c.publicBaseURL, objectKey)

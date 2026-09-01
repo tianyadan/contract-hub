@@ -37,11 +37,13 @@ const MaxUploadFileSize = 20 << 20
 
 // ContractService 合同创建等业务逻辑。
 type ContractService struct {
-	contracts *repository.ContractRepository
-	templates *repository.TemplateRepository
-	customers *repository.CustomerRepository
-	oss       *oss.Client
-	docEngine *docengine.Client
+	contracts       *repository.ContractRepository
+	templates       *repository.TemplateRepository
+	customers       *repository.CustomerRepository
+	shares          *repository.ShareRepository
+	oss             *oss.Client
+	docEngine       *docengine.Client
+	publicWebOrigin string
 }
 
 // NewContractService 创建合同服务。
@@ -49,15 +51,19 @@ func NewContractService(
 	contracts *repository.ContractRepository,
 	templates *repository.TemplateRepository,
 	customers *repository.CustomerRepository,
+	shares *repository.ShareRepository,
 	ossClient *oss.Client,
 	docEngine *docengine.Client,
+	publicWebOrigin string,
 ) *ContractService {
 	return &ContractService{
-		contracts: contracts,
-		templates: templates,
-		customers: customers,
-		oss:       ossClient,
-		docEngine: docEngine,
+		contracts:       contracts,
+		templates:       templates,
+		customers:       customers,
+		shares:          shares,
+		oss:             ossClient,
+		docEngine:       docEngine,
+		publicWebOrigin: publicWebOrigin,
 	}
 }
 

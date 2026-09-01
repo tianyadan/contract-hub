@@ -263,12 +263,30 @@ func (h *ShareHandler) Confirm(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, 40001, "合同ID不合法")
 		return
 	}
+	form, err := parsePdfUploadForm(c)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, 40001, err.Error())
+		return
+	}
 
 	user := middleware.GetUsername(c)
 	if user == "" {
 		user = "内部用户"
 	}
-	err = h.svc.Confirm(c.Request.Context(), contractID, middleware.GetUserID(c), user, false, c.ClientIP(), c.Request.UserAgent())
+	err = h.svc.ConfirmWithPdf(
+		c.Request.Context(),
+		contractID,
+		middleware.GetUserID(c),
+		user,
+		c.ClientIP(),
+		c.Request.UserAgent(),
+		service.ConfirmPdfInput{
+			PdfData:    form.Data,
+			Hash:       form.Hash,
+			PageCount:  form.PageCount,
+			VerifyCode: form.VerifyCode,
+		},
+	)
 	if err != nil {
 		writeShareError(c, err)
 		return
@@ -289,12 +307,67 @@ func (h *ShareHandler) Confirm(c *gin.Context) {
 func (h *ShareHandler) ShareConfirm(c *gin.Context) {
 	token := c.Param("token")
 	name := collaboratorName(c)
-	err := h.svc.ShareConfirm(c.Request.Context(), token, name, c.ClientIP(), c.Request.UserAgent())
+	form, err := parsePdfUploadForm(c)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, 40001, err.Error())
+		return
+	}
+	err = h.svc.ShareConfirmWithPdf(
+		c.Request.Context(),
+		token,
+		name,
+		c.ClientIP(),
+		c.Request.UserAgent(),
+		service.ConfirmPdfInput{
+			PdfData:    form.Data,
+			Hash:       form.Hash,
+			PageCount:  form.PageCount,
+			VerifyCode: form.VerifyCode,
+		},
+	)
 	if err != nil {
 		writeShareError(c, err)
 		return
 	}
 	response.Success(c, http.StatusOK, "确认成功", nil)
+}
+
+// SharePrepareFinalExport 外部分享页预分配验真码。
+func (h *ShareHandler) SharePrepareFinalExport(c *gin.Context) {
+	token := c.Param("token")
+	name := collaboratorName(c)
+	result, err := h.svc.PrepareShareFinalExport(c.Request.Context(), token, name)
+	if err != nil {
+		writeShareError(c, err)
+		return
+	}
+	response.Success(c, http.StatusOK, "ok", result)
+}
+
+// ShareExportPdf 外部分享页上传 PDF 归档。
+func (h *ShareHandler) ShareExportPdf(c *gin.Context) {
+	token := c.Param("token")
+	name := collaboratorName(c)
+	form, err := parsePdfUploadForm(c)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, 40001, err.Error())
+		return
+	}
+	result, err := h.svc.ShareUploadExportPdf(
+		c.Request.Context(),
+		token,
+		name,
+		form.Data,
+		form.Hash,
+		form.PageCount,
+		form.VerifyCode,
+		form.Draft,
+	)
+	if err != nil {
+		writeShareError(c, err)
+		return
+	}
+	response.Success(c, http.StatusOK, "ok", result)
 }
 
 // ListConfirmations 内部查看确认记录
@@ -381,7 +454,10 @@ func collaboratorName(c *gin.Context) string {
 // writeShareError 分享模块错误转换。
 func writeShareError(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, service.ErrInvalidInput):
+	case errors.Is(err, service.ErrInvalidInput),
+		errors.Is(err, service.ErrInvalidPdfInput),
+		errors.Is(err, service.ErrInvalidPdfHash),
+		errors.Is(err, service.ErrVerifyCodeMismatch):
 		response.Error(c, http.StatusBadRequest, 40001, err.Error())
 	case errors.Is(err, service.ErrShareNotFound),
 		errors.Is(err, service.ErrShareDisabled),
@@ -395,6 +471,8 @@ func writeShareError(c *gin.Context, err error) {
 		errors.Is(err, service.ErrVersionNotFound):
 		response.Error(c, http.StatusNotFound, 40401, err.Error())
 	case errors.Is(err, service.ErrContractLocked):
+		response.Error(c, http.StatusForbidden, 40302, err.Error())
+	case errors.Is(err, service.ErrAlreadyConfirmed):
 		response.Error(c, http.StatusForbidden, 40302, err.Error())
 	default:
 		log.Printf("share error: %v", err)
