@@ -1,0 +1,23 @@
+.fidelity-snapshot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fidelity-snapshot-list__item {
+  padding: 10px 12px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.fidelity-snapshot-list__main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fidelity-snapshot-list__meta {
+  font-size: 12px;
+}

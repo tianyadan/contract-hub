@@ -20,6 +20,7 @@ func New(
 	customerHandler *handler.CustomerHandler,
 	shareHandler *handler.ShareHandler,
 	publicHandler *handler.PublicHandler,
+	fidelityHandler *handler.FidelityHandler,
 	internalWSHandler, shareWSHandler gin.HandlerFunc,
 ) *gin.Engine {
 	// 根据环境变量设置 Gin 模式，便于本地 debug / 线上 release 切换
@@ -65,6 +66,10 @@ func New(
 			templates.DELETE("/:id", templateHandler.Delete)
 			templates.GET("/:id/preview", templateHandler.Preview)
 			templates.PUT("/:id/content", templateHandler.SaveContent)
+			templates.GET("/:id/fidelity-snapshots", fidelityHandler.ListTemplateSnapshots)
+			templates.POST("/:id/fidelity-snapshots", fidelityHandler.CreateTemplateSnapshot)
+			templates.GET("/:id/fidelity-snapshots/:snapshotId", fidelityHandler.GetTemplateSnapshot)
+			templates.POST("/:id/fidelity-snapshots/:snapshotId/rollback", fidelityHandler.RollbackTemplateSnapshot)
 		}
 
 		// 客户管理
@@ -107,6 +112,10 @@ func New(
 			contracts.GET("/:id/versions/:versionId/export-pdf", contractHandler.GetVersionExportPdf)
 			contracts.POST("/:id/export-png", contractHandler.ExportPng)
 			contracts.GET("/:id/export-png", contractHandler.GetExportPng)
+			contracts.GET("/:id/fidelity-snapshots", fidelityHandler.ListContractSnapshots)
+			contracts.POST("/:id/fidelity-snapshots", fidelityHandler.CreateContractSnapshot)
+			contracts.GET("/:id/fidelity-snapshots/:snapshotId", fidelityHandler.GetContractSnapshot)
+			contracts.POST("/:id/fidelity-snapshots/:snapshotId/rollback", fidelityHandler.RollbackContractSnapshot)
 		}
 
 		// 外部协作者公开访问（无需 JWT，通过 token 鉴权）

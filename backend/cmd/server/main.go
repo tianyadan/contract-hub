@@ -63,6 +63,10 @@ func main() {
 	templateHandler := handler.NewTemplateHandler(templateService)
 	customerHandler := handler.NewCustomerHandler(customerService, contractService)
 
+	fidelityRepo := repository.NewFidelityRepository(db)
+	fidelityService := service.NewFidelityService(fidelityRepo, contractRepo, templateRepo, ossClient, contractService, templateService)
+	fidelityHandler := handler.NewFidelityHandler(fidelityService)
+
 	shareService := service.NewShareService(shareRepo, contractRepo, docEngineClient, ossClient, contractService)
 	shareHandler := handler.NewShareHandler(shareService)
 	publicHandler := handler.NewPublicHandler(contractService)
@@ -73,7 +77,7 @@ func main() {
 	shareWSHandler := ws.ServeShare(wsHub, shareService)
 
 	// 5. 初始化 Gin 引擎并注册路由
-	r := router.New(cfg, authHandler, contractHandler, templateHandler, customerHandler, shareHandler, publicHandler, internalWSHandler, shareWSHandler)
+	r := router.New(cfg, authHandler, contractHandler, templateHandler, customerHandler, shareHandler, publicHandler, fidelityHandler, internalWSHandler, shareWSHandler)
 
 	// 6. 启动 HTTP 服务
 	log.Printf("contract-hub backend server listening on :%s", cfg.ServerPort)
