@@ -62,7 +62,15 @@ type CreateShareInput struct {
 	ExpireHours int  // 0 表示不过期
 }
 
-// ShareInfoVO 分享概要返回。
+// SharePublicVO 外部分享入口概要（加入前不暴露合同正文信息）。
+type SharePublicVO struct {
+	Permission     int8       `json:"permission"`
+	PermissionText string     `json:"permission_text"`
+	Status         int8       `json:"status"`
+	ExpireTime     *time.Time `json:"expire_time,omitempty"`
+}
+
+// ShareInfoVO 分享概要返回（内部创建分享时使用）。
 type ShareInfoVO struct {
 	ShareID        int64      `json:"share_id"`
 	Token          string     `json:"token"`
@@ -83,6 +91,7 @@ type ShareContractVO struct {
 	ContractName     string                 `json:"contract_name"`
 	Status           int8                   `json:"status"`
 	StatusText       string                 `json:"status_text"`
+	CurrentVersionID int64                  `json:"current_version_id"`
 	CurrentVersionNo int                    `json:"current_version_no"`
 	DocumentContent  map[string]interface{} `json:"document_content"`
 	Permission       int8                   `json:"permission"`
@@ -151,24 +160,18 @@ func (s *ShareService) CreateShare(ctx context.Context, input CreateShareInput) 
 	}, nil
 }
 
-// GetShareInfo 根据 token 获取分享概要，并校验链接有效性。
-func (s *ShareService) GetShareInfo(ctx context.Context, token string) (*ShareInfoVO, error) {
-	share, contract, err := s.validateShare(ctx, token)
+// GetShareInfo 根据 token 获取分享入口信息（加入前不返回合同名称/编号）。
+func (s *ShareService) GetShareInfo(ctx context.Context, token string) (*SharePublicVO, error) {
+	share, _, err := s.validateShare(ctx, token)
 	if err != nil {
 		return nil, err
 	}
 
-	return &ShareInfoVO{
-		ShareID:        share.ID,
-		Token:          share.ShareToken,
-		ContractID:     contract.ID,
-		ContractName:   contract.ContractName,
-		ContractNo:     contract.ContractNo,
+	return &SharePublicVO{
 		Permission:     share.Permission,
 		PermissionText: sharePermissionText(share.Permission),
 		Status:         share.Status,
 		ExpireTime:     share.ExpireTime,
-		CreateTime:     share.CreateTime,
 	}, nil
 }
 
@@ -256,6 +259,12 @@ func (s *ShareService) GetShareContract(ctx context.Context, token, name string)
 		ContractName:     contract.ContractName,
 		Status:           contract.Status,
 		StatusText:       contractStatusText(contract.Status),
+		CurrentVersionID: func() int64 {
+			if contract.CurrentVersionID != nil {
+				return *contract.CurrentVersionID
+			}
+			return 0
+		}(),
 		CurrentVersionNo: contract.CurrentVersionNo,
 		DocumentContent:  doc,
 		Permission:       share.Permission,
@@ -470,26 +479,26 @@ func (s *ShareService) ShareSaveVersion(ctx context.Context, token, name string,
 	}, nil
 }
 
-// ConfirmWithPdf 内部用户确认当前版本并归档终稿 PDF。
+// ConfirmWithPdf 内部用户确认当前版本（双方确认满足后归档 PDF）。
 func (s *ShareService) ConfirmWithPdf(
 	ctx context.Context,
 	contractID, userID int64,
 	name string,
 	ip, userAgent string,
 	input ConfirmPdfInput,
-) error {
+) (*ConfirmOutcome, error) {
 	detail, err := s.contracts.GetDetailByOwner(ctx, contractID, userID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if detail == nil {
-		return ErrContractNotFound
+		return nil, ErrContractNotFound
 	}
 	if detail.Contract.Status == 3 || detail.Contract.Status == 4 {
-		return ErrAlreadyConfirmed
+		return nil, ErrAlreadyConfirmed
 	}
 	if detail.Contract.CurrentVersionID == nil {
-		return errors.New("合同还没有版本")
+		return nil, errors.New("合同还没有版本")
 	}
 
 	now := time.Now()
@@ -507,28 +516,28 @@ func (s *ShareService) ConfirmWithPdf(
 		ConfirmTime:   now,
 		CreateTime:    now,
 	}
-	return s.contractSvc.FinalizeConfirmWithPdfArchive(ctx, contractID, *detail.Contract.CurrentVersionID, input, confirmation)
+	return s.contractSvc.ProcessConfirmation(ctx, contractID, *detail.Contract.CurrentVersionID, confirmation, input)
 }
 
-// ShareConfirmWithPdf 外部协作者确认当前版本并归档终稿 PDF。
+// ShareConfirmWithPdf 外部协作者确认当前版本（双方确认满足后归档 PDF）。
 func (s *ShareService) ShareConfirmWithPdf(
 	ctx context.Context,
 	token, name, ip, userAgent string,
 	input ConfirmPdfInput,
-) error {
+) (*ConfirmOutcome, error) {
 	_, contract, err := s.validateShare(ctx, token)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	collaborator, err := s.getCollaborator(ctx, contract.ID, name)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if contract.Status == 3 || contract.Status == 4 {
-		return ErrAlreadyConfirmed
+		return nil, ErrAlreadyConfirmed
 	}
 	if contract.CurrentVersionID == nil {
-		return errors.New("合同还没有版本")
+		return nil, errors.New("合同还没有版本")
 	}
 
 	now := time.Now()
@@ -546,7 +555,34 @@ func (s *ShareService) ShareConfirmWithPdf(
 		ConfirmTime:    now,
 		CreateTime:     now,
 	}
-	return s.contractSvc.FinalizeConfirmWithPdfArchive(ctx, contract.ID, *contract.CurrentVersionID, input, confirmation)
+	return s.contractSvc.ProcessConfirmation(ctx, contract.ID, *contract.CurrentVersionID, confirmation, input)
+}
+
+// GetConfirmProgress 内部用户查询当前版本确认进度。
+func (s *ShareService) GetConfirmProgress(ctx context.Context, contractID, userID int64) (*ConfirmProgress, error) {
+	detail, err := s.contracts.GetDetailByOwner(ctx, contractID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if detail == nil || detail.Contract.CurrentVersionID == nil {
+		return nil, ErrContractNotFound
+	}
+	return s.contractSvc.GetConfirmProgress(ctx, contractID, *detail.Contract.CurrentVersionID)
+}
+
+// ShareGetConfirmProgress 外部协作者查询确认进度。
+func (s *ShareService) ShareGetConfirmProgress(ctx context.Context, token, name string) (*ConfirmProgress, error) {
+	_, contract, err := s.validateShare(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.getCollaborator(ctx, contract.ID, name); err != nil {
+		return nil, err
+	}
+	if contract.CurrentVersionID == nil {
+		return nil, errors.New("合同还没有版本")
+	}
+	return s.contractSvc.GetConfirmProgress(ctx, contract.ID, *contract.CurrentVersionID)
 }
 
 // PrepareShareFinalExport 外部分享页预分配验真码。

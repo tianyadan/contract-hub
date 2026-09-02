@@ -556,7 +556,9 @@ func writeContractError(c *gin.Context, err error) {
 		errors.Is(err, service.ErrInvalidPdfInput),
 		errors.Is(err, service.ErrInvalidPdfHash),
 		errors.Is(err, service.ErrVerifyCodeMismatch),
-		errors.Is(err, service.ErrExportPdfTooLarge):
+		errors.Is(err, service.ErrExportPdfTooLarge),
+		errors.Is(err, service.ErrAlreadyConfirmedByUser),
+		errors.Is(err, service.ErrPdfRequiredForFinalize):
 		response.Error(c, http.StatusBadRequest, 40001, err.Error())
 	case errors.Is(err, service.ErrContractNotFound):
 		response.Error(c, http.StatusNotFound, 40401, err.Error())

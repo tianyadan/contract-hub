@@ -182,6 +182,66 @@ func (r *ShareRepository) ListConfirmations(ctx context.Context, contractID int6
 	return items, nil
 }
 
+// ListConfirmationsForVersion 查询指定版本的确认记录。
+func (r *ShareRepository) ListConfirmationsForVersion(
+	ctx context.Context,
+	contractID, versionID int64,
+) ([]model.ContractConfirmation, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, contract_id, version_id, user_id, collaborator_id,
+		       confirmer_name, confirmer_type, confirm_status,
+		       confirm_ip, user_agent, confirm_time, create_time
+		FROM contract_confirmation
+		WHERE contract_id = ? AND version_id = ? AND confirm_status = 1
+		ORDER BY confirm_time ASC, id ASC
+	`, contractID, versionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.ContractConfirmation, 0)
+	for rows.Next() {
+		var c model.ContractConfirmation
+		var (
+			userID         sql.NullInt64
+			collaboratorID sql.NullInt64
+			confirmIP      sql.NullString
+			userAgent      sql.NullString
+		)
+		if err := rows.Scan(
+			&c.ID, &c.ContractID, &c.VersionID, &userID, &collaboratorID,
+			&c.ConfirmerName, &c.ConfirmerType, &c.ConfirmStatus,
+			&confirmIP, &userAgent, &c.ConfirmTime, &c.CreateTime,
+		); err != nil {
+			return nil, err
+		}
+		if userID.Valid {
+			c.UserID = &userID.Int64
+		}
+		if collaboratorID.Valid {
+			c.CollaboratorID = &collaboratorID.Int64
+		}
+		c.ConfirmIP = confirmIP.String
+		c.UserAgent = userAgent.String
+		items = append(items, c)
+	}
+	return items, rows.Err()
+}
+
+// HasExternalCollaborators 合同是否存在外部协作者（决定是否双方确认）。
+func (r *ShareRepository) HasExternalCollaborators(ctx context.Context, contractID int64) (bool, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM contract_collaborator
+		WHERE contract_id = ? AND collaborator_type = 1 AND status = 1
+	`, contractID).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // scanShare 扫描 contract_share 行。
 func scanShare(row *sql.Row) (*model.ContractShare, error) {
 	var s model.ContractShare

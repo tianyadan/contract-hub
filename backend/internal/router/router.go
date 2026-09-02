@@ -100,6 +100,7 @@ func New(
 			contracts.POST("/:id/share/:shareId/disable", shareHandler.DisableShare)
 			contracts.POST("/:id/prepare-final-export", contractHandler.PrepareFinalExport)
 			contracts.POST("/:id/confirm", shareHandler.Confirm)
+			contracts.GET("/:id/confirm-progress", shareHandler.GetConfirmProgress)
 			contracts.GET("/:id/confirmations", shareHandler.ListConfirmations)
 			contracts.POST("/:id/export-pdf", contractHandler.ExportPdf)
 			contracts.GET("/:id/export-pdf", contractHandler.GetExportPdf)
@@ -121,6 +122,7 @@ func New(
 			share.POST("/:token/prepare-final-export", shareHandler.SharePrepareFinalExport)
 			share.POST("/:token/export-pdf", shareHandler.ShareExportPdf)
 			share.POST("/:token/confirm", shareHandler.ShareConfirm)
+			share.GET("/:token/confirm-progress", shareHandler.ShareGetConfirmProgress)
 			share.GET("/:token/confirmations", shareHandler.ShareListConfirmations)
 			share.GET("/:token/ws", shareWSHandler)
 		}

@@ -263,7 +263,7 @@ func (h *ShareHandler) Confirm(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, 40001, "合同ID不合法")
 		return
 	}
-	form, err := parsePdfUploadForm(c)
+	form, err := parseConfirmPdfForm(c)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, 40001, err.Error())
 		return
@@ -273,7 +273,7 @@ func (h *ShareHandler) Confirm(c *gin.Context) {
 	if user == "" {
 		user = "内部用户"
 	}
-	err = h.svc.ConfirmWithPdf(
+	outcome, err := h.svc.ConfirmWithPdf(
 		c.Request.Context(),
 		contractID,
 		middleware.GetUserID(c),
@@ -291,7 +291,7 @@ func (h *ShareHandler) Confirm(c *gin.Context) {
 		writeShareError(c, err)
 		return
 	}
-	response.Success(c, http.StatusOK, "确认成功", nil)
+	response.Success(c, http.StatusOK, outcome.Message, outcome)
 }
 
 // ShareConfirm 外部确认
@@ -307,12 +307,12 @@ func (h *ShareHandler) Confirm(c *gin.Context) {
 func (h *ShareHandler) ShareConfirm(c *gin.Context) {
 	token := c.Param("token")
 	name := collaboratorName(c)
-	form, err := parsePdfUploadForm(c)
+	form, err := parseConfirmPdfForm(c)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, 40001, err.Error())
 		return
 	}
-	err = h.svc.ShareConfirmWithPdf(
+	outcome, err := h.svc.ShareConfirmWithPdf(
 		c.Request.Context(),
 		token,
 		name,
@@ -329,10 +329,35 @@ func (h *ShareHandler) ShareConfirm(c *gin.Context) {
 		writeShareError(c, err)
 		return
 	}
-	response.Success(c, http.StatusOK, "确认成功", nil)
+	response.Success(c, http.StatusOK, outcome.Message, outcome)
 }
 
-// SharePrepareFinalExport 外部分享页预分配验真码。
+// GetConfirmProgress 内部用户查询双方确认进度。
+func (h *ShareHandler) GetConfirmProgress(c *gin.Context) {
+	contractID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || contractID <= 0 {
+		response.Error(c, http.StatusBadRequest, 40001, "合同ID不合法")
+		return
+	}
+	progress, err := h.svc.GetConfirmProgress(c.Request.Context(), contractID, middleware.GetUserID(c))
+	if err != nil {
+		writeShareError(c, err)
+		return
+	}
+	response.Success(c, http.StatusOK, "ok", progress)
+}
+
+// ShareGetConfirmProgress 外部协作者查询双方确认进度。
+func (h *ShareHandler) ShareGetConfirmProgress(c *gin.Context) {
+	token := c.Param("token")
+	name := collaboratorName(c)
+	progress, err := h.svc.ShareGetConfirmProgress(c.Request.Context(), token, name)
+	if err != nil {
+		writeShareError(c, err)
+		return
+	}
+	response.Success(c, http.StatusOK, "ok", progress)
+}
 func (h *ShareHandler) SharePrepareFinalExport(c *gin.Context) {
 	token := c.Param("token")
 	name := collaboratorName(c)
@@ -458,7 +483,9 @@ func writeShareError(c *gin.Context, err error) {
 		errors.Is(err, service.ErrInvalidPdfInput),
 		errors.Is(err, service.ErrInvalidPdfHash),
 		errors.Is(err, service.ErrVerifyCodeMismatch),
-		errors.Is(err, service.ErrExportPdfTooLarge):
+		errors.Is(err, service.ErrExportPdfTooLarge),
+		errors.Is(err, service.ErrAlreadyConfirmedByUser),
+		errors.Is(err, service.ErrPdfRequiredForFinalize):
 		response.Error(c, http.StatusBadRequest, 40001, err.Error())
 	case errors.Is(err, service.ErrShareNotFound),
 		errors.Is(err, service.ErrShareDisabled),

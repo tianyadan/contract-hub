@@ -44,11 +44,32 @@ type Hub struct {
 	rooms map[int64]map[*Client]struct{}
 }
 
-// NewHub 创建在线状态 Hub。
+// NewHub 创建在线状态 Hub，并启动每秒全量同步。
 func NewHub() *Hub {
-	return &Hub{
+	h := &Hub{
 		rooms: make(map[int64]map[*Client]struct{}),
 	}
+	h.startPresenceSync(1 * time.Second)
+	return h
+}
+
+// startPresenceSync 定时向各房间广播全量在线列表，避免 join/leave 消息丢失导致状态不准。
+func (h *Hub) startPresenceSync(interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			h.mu.Lock()
+			roomIDs := make([]int64, 0, len(h.rooms))
+			for id := range h.rooms {
+				roomIDs = append(roomIDs, id)
+			}
+			h.mu.Unlock()
+			for _, id := range roomIDs {
+				h.broadcast(id, wsMessage{Type: "presence", List: h.presenceList(id)})
+			}
+		}
+	}()
 }
 
 // upgrader 允许跨域 WebSocket（前端开发环境可能不同端口）。
@@ -212,7 +233,7 @@ func (c *Client) readPump() {
 
 // writePump 向客户端写消息。
 func (c *Client) writePump() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(15 * time.Second)
 	defer func() {
 		ticker.Stop()
 		_ = c.conn.Close()
