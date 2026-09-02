@@ -104,14 +104,19 @@ func (h *ShareHandler) GetShareInfo(c *gin.Context) {
 func (h *ShareHandler) Join(c *gin.Context) {
 	token := c.Param("token")
 	var req struct {
-		Name string `json:"name"`
+		Name  string `json:"name"`
+		Phone string `json:"phone"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Name) == "" {
-		response.Error(c, http.StatusBadRequest, 40001, "请填写姓名")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, 40001, "请填写姓名与预留手机号")
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Phone) == "" {
+		response.Error(c, http.StatusBadRequest, 40001, "请填写姓名与预留手机号")
 		return
 	}
 
-	result, err := h.svc.Join(c.Request.Context(), token, req.Name)
+	result, err := h.svc.Join(c.Request.Context(), token, req.Name, req.Phone)
 	if err != nil {
 		writeShareError(c, err)
 		return
@@ -493,8 +498,11 @@ func writeShareError(c *gin.Context, err error) {
 		errors.Is(err, service.ErrShareMaxAccess),
 		errors.Is(err, service.ErrCollaboratorNotFound):
 		response.Error(c, http.StatusNotFound, 40401, err.Error())
-	case errors.Is(err, service.ErrSharePermissionDenied):
+	case errors.Is(err, service.ErrSharePermissionDenied),
+		errors.Is(err, service.ErrShareGateMismatch):
 		response.Error(c, http.StatusForbidden, 40301, err.Error())
+	case errors.Is(err, service.ErrShareGateIncomplete):
+		response.Error(c, http.StatusBadRequest, 40001, err.Error())
 	case errors.Is(err, service.ErrContractNotFound),
 		errors.Is(err, service.ErrVersionNotFound):
 		response.Error(c, http.StatusNotFound, 40401, err.Error())
@@ -516,5 +524,6 @@ type createShareRequest struct {
 
 // joinShareRequest 加入请求体（Swagger 用）
 type joinShareRequest struct {
-	Name string `json:"name" example:"张三"`
+	Name  string `json:"name" example:"张三"`
+	Phone string `json:"phone" example:"13800138000"`
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/lshc/contract-hub/backend/internal/auth"
+	"github.com/lshc/contract-hub/backend/internal/collab"
 	"github.com/lshc/contract-hub/backend/internal/service"
 )
 
@@ -25,7 +26,7 @@ type UserPresence struct {
 // wsMessage WebSocket 消息统一格式。
 type wsMessage struct {
 	Type string         `json:"type"`
-	Data UserPresence   `json:"data,omitempty"`
+	Data any            `json:"data,omitempty"`
 	List []UserPresence `json:"list,omitempty"`
 }
 
@@ -186,6 +187,16 @@ func (h *Hub) presenceList(contractID int64) []UserPresence {
 		list = append(list, client.user)
 	}
 	return list
+}
+
+// BroadcastConfirmProgress 广播双方确认进度变更。
+func (h *Hub) BroadcastConfirmProgress(contractID int64, payload collab.ConfirmProgressPayload) {
+	h.broadcast(contractID, wsMessage{Type: "confirm_progress", Data: payload})
+}
+
+// BroadcastVersionSaved 广播新版本保存事件。
+func (h *Hub) BroadcastVersionSaved(contractID int64, payload collab.VersionSavedPayload) {
+	h.broadcast(contractID, wsMessage{Type: "version_saved", Data: payload})
 }
 
 // broadcast 向房间所有客户端发送消息。

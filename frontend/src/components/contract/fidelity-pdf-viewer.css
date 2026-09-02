@@ -4,6 +4,22 @@
   min-height: 480px;
 }
 
+.fidelity-pdf-viewer-modal__body {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.fidelity-pdf-viewer-modal__loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fafafa;
+  z-index: 1;
+}
+
 .fidelity-pdf-viewer-modal__frame {
   width: 100%;
   height: 100%;

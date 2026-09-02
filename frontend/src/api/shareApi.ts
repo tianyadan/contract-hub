@@ -35,11 +35,11 @@ export function getShareInfo(token: string): Promise<SharePublicInfo> {
  * @param name 协作者姓名
  * @returns 协作者信息
  */
-export function joinShare(token: string, name: string): Promise<Collaborator> {
+export function joinShare(token: string, name: string, phone: string): Promise<Collaborator> {
   return requestTyped<Collaborator>({
     url: `/share/${token}/join`,
     method: 'post',
-    data: { name },
+    data: { name, phone },
   })
 }
 

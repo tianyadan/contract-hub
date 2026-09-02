@@ -69,6 +69,7 @@ func New(
 			templates.GET("/:id/fidelity-snapshots", fidelityHandler.ListTemplateSnapshots)
 			templates.POST("/:id/fidelity-snapshots", fidelityHandler.CreateTemplateSnapshot)
 			templates.GET("/:id/fidelity-snapshots/:snapshotId", fidelityHandler.GetTemplateSnapshot)
+			templates.GET("/:id/fidelity-snapshots/:snapshotId/pdf", fidelityHandler.StreamTemplateSnapshotPdf)
 			templates.POST("/:id/fidelity-snapshots/:snapshotId/rollback", fidelityHandler.RollbackTemplateSnapshot)
 		}
 
@@ -115,6 +116,7 @@ func New(
 			contracts.GET("/:id/fidelity-snapshots", fidelityHandler.ListContractSnapshots)
 			contracts.POST("/:id/fidelity-snapshots", fidelityHandler.CreateContractSnapshot)
 			contracts.GET("/:id/fidelity-snapshots/:snapshotId", fidelityHandler.GetContractSnapshot)
+			contracts.GET("/:id/fidelity-snapshots/:snapshotId/pdf", fidelityHandler.StreamContractSnapshotPdf)
 			contracts.POST("/:id/fidelity-snapshots/:snapshotId/rollback", fidelityHandler.RollbackContractSnapshot)
 		}
 

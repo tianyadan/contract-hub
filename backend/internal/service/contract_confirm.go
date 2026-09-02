@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/lshc/contract-hub/backend/internal/collab"
 	"github.com/lshc/contract-hub/backend/internal/model"
 )
 
@@ -57,6 +58,7 @@ func (s *ContractService) ProcessConfirmation(
 			return nil, err
 		}
 		pending := pendingPartiesAfterConfirm(existing, confirmation, requiresDual)
+		s.broadcastConfirmProgress(ctx, contractID, versionID, detail.Contract.Status)
 		return &ConfirmOutcome{
 			Status:         "pending",
 			Message:        "您已确认当前版本，等待对方确认后可生成终稿并锁定合同",
@@ -70,10 +72,28 @@ func (s *ContractService) ProcessConfirmation(
 	if err := s.FinalizeConfirmWithPdfArchive(ctx, contractID, versionID, input, confirmation); err != nil {
 		return nil, err
 	}
+	s.broadcastConfirmProgress(ctx, contractID, versionID, 3)
 	return &ConfirmOutcome{
 		Status:  "completed",
 		Message: "双方已确认，终稿 PDF 已归档，合同已锁定",
 	}, nil
+}
+
+func (s *ContractService) broadcastConfirmProgress(ctx context.Context, contractID, versionID int64, contractStatus int8) {
+	if s.broadcaster == nil {
+		return
+	}
+	progress, err := s.GetConfirmProgress(ctx, contractID, versionID)
+	if err != nil || progress == nil {
+		return
+	}
+	s.broadcaster.BroadcastConfirmProgress(contractID, collab.ConfirmProgressPayload{
+		VersionID:           versionID,
+		HasInternalConfirm:  progress.HasInternalConfirm,
+		HasExternalConfirm:  progress.HasExternalConfirm,
+		RequiresDualConfirm: progress.RequiresDualConfirm,
+		ContractStatus:      contractStatus,
+	})
 }
 
 // hasConfirmedVersion 判断当前用户/协作者是否已确认该版本。

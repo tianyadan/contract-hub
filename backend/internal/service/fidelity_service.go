@@ -123,6 +123,22 @@ func (s *FidelityService) GetTemplateSnapshot(ctx context.Context, templateID, s
 	return s.getSnapshot(ctx, model.FidelityEntityTemplate, templateID, snapshotID)
 }
 
+// GetContractSnapshotPdf 下载合同快照 PDF（供后端代理内嵌预览）。
+func (s *FidelityService) GetContractSnapshotPdf(ctx context.Context, contractID, snapshotID, userID int64) ([]byte, string, error) {
+	if err := s.ensureContractOwner(ctx, contractID, userID); err != nil {
+		return nil, "", err
+	}
+	return s.getSnapshotPdf(ctx, model.FidelityEntityContract, contractID, snapshotID)
+}
+
+// GetTemplateSnapshotPdf 下载模板快照 PDF（供后端代理内嵌预览）。
+func (s *FidelityService) GetTemplateSnapshotPdf(ctx context.Context, templateID, snapshotID, userID int64) ([]byte, string, error) {
+	if err := s.ensureTemplateOwner(ctx, templateID, userID); err != nil {
+		return nil, "", err
+	}
+	return s.getSnapshotPdf(ctx, model.FidelityEntityTemplate, templateID, snapshotID)
+}
+
 // CreateContractSnapshot 创建合同高保真快照。
 func (s *FidelityService) CreateContractSnapshot(ctx context.Context, input CreateFidelitySnapshotInput) (*FidelitySnapshotDetailVO, error) {
 	if err := s.ensureContractOwner(ctx, input.EntityID, input.UserID); err != nil {
@@ -216,11 +232,27 @@ func (s *FidelityService) getSnapshot(ctx context.Context, entityType int8, enti
 	if snap == nil {
 		return nil, ErrFidelitySnapshotNotFound
 	}
-	vo := toFidelitySnapshotVO(*snap, s.signPdfURL(snap.PreviewPdfOssKey))
+	vo := toFidelitySnapshotVO(*snap, "")
 	return &FidelitySnapshotDetailVO{
 		FidelitySnapshotVO: vo,
 		Hash:               snap.PreviewPdfHash,
 	}, nil
+}
+
+func (s *FidelityService) getSnapshotPdf(ctx context.Context, entityType int8, entityID, snapshotID int64) ([]byte, string, error) {
+	snap, err := s.fidelity.GetByID(ctx, entityType, entityID, snapshotID)
+	if err != nil {
+		return nil, "", err
+	}
+	if snap == nil {
+		return nil, "", ErrFidelitySnapshotNotFound
+	}
+	data, err := s.oss.Download(ctx, snap.PreviewPdfOssKey)
+	if err != nil {
+		return nil, "", fmt.Errorf("读取快照 PDF 失败: %w", err)
+	}
+	fileName := fmt.Sprintf("fidelity-snapshot-%d.pdf", snap.SnapshotNo)
+	return data, fileName, nil
 }
 
 func (s *FidelityService) createSnapshot(ctx context.Context, input CreateFidelitySnapshotInput) (*FidelitySnapshotDetailVO, error) {
@@ -294,7 +326,7 @@ func (s *FidelityService) createSnapshot(ctx context.Context, input CreateFideli
 		return nil, err
 	}
 
-	vo := toFidelitySnapshotVO(*snap, s.signPdfURL(objectKey))
+	vo := toFidelitySnapshotVO(*snap, "")
 	return &FidelitySnapshotDetailVO{
 		FidelitySnapshotVO: vo,
 		Hash:               snap.PreviewPdfHash,

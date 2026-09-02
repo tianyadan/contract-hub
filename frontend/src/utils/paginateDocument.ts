@@ -108,6 +108,26 @@ export function paginateByHeights(
   return pages.length > 0 ? pages : [[]]
 }
 
+/**
+ * 在纵向堆叠容器中测量每个块的实际占位高度（含 margin 折叠）。
+ * offsetHeight 不含 margin，直接相加会严重低估带段前/段后距的文档。
+ */
+export function measureStackedBlockHeights(elements: HTMLElement[]): Record<string, number> {
+  const heights: Record<string, number> = {}
+  let prevBottom = 0
+
+  elements.forEach((el, index) => {
+    const id = el.dataset.measureId ?? el.dataset.blockId
+    if (!id) return
+    const bottom = el.offsetTop + el.offsetHeight
+    const contribution = index === 0 ? bottom : bottom - prevBottom
+    heights[id] = Math.max(1, contribution)
+    prevBottom = bottom
+  })
+
+  return heights
+}
+
 /** 查找块所在页索引，找不到返回 -1 */
 export function findPageIndex(pageIds: string[][], blockId: string): number {
   return pageIds.findIndex((ids) => ids.includes(blockId))
@@ -153,16 +173,19 @@ export function applyLivePageOverflowBreaks(
 
   let used = 0
   let overflowBlockId: string | null = null
+  let prevBottom = 0
 
   for (let i = 0; i < liveChildren.length; i++) {
     const el = liveChildren[i]
-    const h = Math.max(1, el.offsetHeight)
+    const bottom = el.offsetTop + el.offsetHeight
+    const contribution = i === 0 ? bottom : bottom - prevBottom
+    prevBottom = bottom
     const id = el.dataset.blockId
-    if (used + h > maxH + 0.5 && i > 0 && id && domIds.has(id)) {
+    if (used + contribution > maxH + 0.5 && i > 0 && id && domIds.has(id)) {
       overflowBlockId = id
       break
     }
-    used += h
+    used += contribution
   }
 
   if (overflowBlockId) {

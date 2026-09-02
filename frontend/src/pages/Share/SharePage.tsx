@@ -43,8 +43,10 @@ import DocumentEditor, { type DocumentEditorHandle } from '../../components/cont
 import ChangeTimeline from '../../components/contract/ChangeTimeline'
 import CollapsibleScrollSection from '../../components/contract/CollapsibleScrollSection'
 import OnlinePresenceBar from '../../components/contract/OnlinePresenceBar'
+import ConfirmStatusBanner from '../../components/contract/ConfirmStatusBanner'
+import StaleContentBanner from '../../components/contract/StaleContentBanner'
 import ConfirmActionBar from '../../components/contract/ConfirmActionBar'
-import { usePresence } from '../../hooks/usePresence'
+import { useCollaboration } from '../../hooks/useCollaboration'
 import { isContractLocked, normalizeDocumentContent } from '../../utils/documentContent'
 import { hasUserConfirmedVersion, willFinalizeAfterConfirm } from '../../utils/confirmProgress'
 import {
@@ -60,9 +62,13 @@ import {
 } from '../../utils/exportContractPdf'
 import './share.css'
 
-/** 按分享 token 隔离协作者姓名缓存 */
+/** 按分享 token 隔离协作者姓名/手机号缓存 */
 function shareNameStorageKey(token: string): string {
   return `lshc_share_name_${token}`
+}
+
+function sharePhoneStorageKey(token: string): string {
+  return `lshc_share_phone_${token}`
 }
 
 /**
@@ -73,13 +79,14 @@ function shareNameStorageKey(token: string): string {
  */
 export default function SharePage() {
   const { token = '' } = useParams<{ token: string }>()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
 
   // 分享信息与加载状态
   const [shareInfo, setShareInfo] = useState<SharePublicInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
   const [joined, setJoined] = useState(false)
   const [joining, setJoining] = useState(false)
   // 协作者信息（含权限）
@@ -99,8 +106,26 @@ export default function SharePage() {
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [downloading, setDownloading] = useState(false)
-  // 在线用户（WebSocket 实时）
-  const { users, isConnected } = usePresence(undefined, token)
+
+  const fetchShareConfirmProgress = useCallback(
+    () => getShareConfirmProgress(token, name),
+    [token, name],
+  )
+
+  const {
+    users,
+    isConnected,
+    confirmProgress,
+    setConfirmProgress,
+    staleVersion,
+    dismissStaleVersion,
+  } = useCollaboration({
+    shareToken: joined ? token : undefined,
+    selfRole: 'collaborator',
+    selfName: name,
+    fetchConfirmProgress: joined && name ? fetchShareConfirmProgress : undefined,
+    enabled: joined,
+  })
 
   // 当前协作者权限：0 只读 1 可编辑
   const canEdit = collaborator?.permission === 1
@@ -109,14 +134,15 @@ export default function SharePage() {
 
   /** 加载分享合同内容、变更记录与确认记录 */
   const loadContract = useCallback(
-    async (collabName: string) => {
+    async (collabName: string, restorePage?: number) => {
       setContentLoading(true)
       try {
-        const [data, changeRes, versionRes, confirmRes] = await Promise.all([
+        const [data, changeRes, versionRes, confirmRes, progress] = await Promise.all([
           getShareContract(token, collabName),
           getShareChanges(token, collabName, { page: 1, page_size: 50 }),
           getShareVersions(token, collabName, { page: 1, page_size: 50 }),
           getShareConfirmations(token, collabName),
+          getShareConfirmProgress(token, collabName),
         ])
         setContract(data)
         const content = normalizeDocumentContent(data.document_content)
@@ -126,13 +152,19 @@ export default function SharePage() {
         setChanges(changeRes.list)
         setVersions(versionRes.list)
         setConfirmations(confirmRes)
+        setConfirmProgress(progress)
+        if (restorePage != null) {
+          requestAnimationFrame(() => {
+            editorRef.current?.setCurrentPage(restorePage)
+          })
+        }
       } catch {
         message.error('合同内容加载失败')
       } finally {
         setContentLoading(false)
       }
     },
-    [token, message],
+    [token, message, setConfirmProgress],
   )
 
   // 首次加载：校验链接；若本地有姓名则向后端验证后加入
@@ -141,15 +173,18 @@ export default function SharePage() {
       .then(async (info) => {
         setShareInfo(info)
         const savedName = sessionStorage.getItem(shareNameStorageKey(token))
-        if (savedName) {
+        const savedPhone = sessionStorage.getItem(sharePhoneStorageKey(token))
+        if (savedName && savedPhone) {
           setName(savedName)
+          setPhone(savedPhone)
           try {
-            const collab = await joinShare(token, savedName)
+            const collab = await joinShare(token, savedName, savedPhone)
             setCollaborator(collab)
             setJoined(true)
             await loadContract(collab.name)
           } catch {
             sessionStorage.removeItem(shareNameStorageKey(token))
+            sessionStorage.removeItem(sharePhoneStorageKey(token))
             setJoined(false)
           }
         }
@@ -161,16 +196,22 @@ export default function SharePage() {
       .finally(() => setLoading(false))
   }, [token, loadContract])
 
-  /** 外部用户输入姓名加入协作 */
+  /** 外部用户输入姓名与预留手机号加入协作 */
   const handleJoin = async () => {
     if (!name.trim()) {
       message.warning('请输入您的姓名')
       return
     }
+    const phoneDigits = phone.replace(/\D/g, '')
+    if (phoneDigits.length !== 11) {
+      message.warning('请输入正确的 11 位预留手机号')
+      return
+    }
     setJoining(true)
     try {
-      const collab = await joinShare(token, name.trim())
+      const collab = await joinShare(token, name.trim(), phoneDigits)
       sessionStorage.setItem(shareNameStorageKey(token), name.trim())
+      sessionStorage.setItem(sharePhoneStorageKey(token), phoneDigits)
       setCollaborator(collab)
       setJoined(true)
       await loadContract(collab.name)
@@ -178,6 +219,26 @@ export default function SharePage() {
       // 错误提示已在请求拦截器统一处理
     } finally {
       setJoining(false)
+    }
+  }
+
+  /** 对方保存后刷新正文并保留当前页码 */
+  const handleStaleRefresh = async () => {
+    const savedPage = editorRef.current?.getCurrentPage() ?? 0
+    const hasLocalChanges =
+      originalSnapshot !== '' && JSON.stringify(contentRef.current) !== originalSnapshot
+    const doRefresh = async () => {
+      dismissStaleVersion()
+      await loadContract(name, savedPage)
+    }
+    if (hasLocalChanges) {
+      modal.confirm({
+        title: '刷新将丢弃未保存修改',
+        content: '对方已保存新版本，刷新后您当前的未保存修改将丢失。是否继续？',
+        onOk: () => void doRefresh(),
+      })
+    } else {
+      await doRefresh()
     }
   }
 
@@ -333,6 +394,17 @@ export default function SharePage() {
     }
   }
 
+  const selfConfirmed =
+    contract?.current_version_id != null &&
+    collaborator != null &&
+    hasUserConfirmedVersion(
+      confirmations,
+      contract.current_version_id,
+      1,
+      undefined,
+      collaborator.collaborator_id,
+    )
+
   // 加载中
   if (loading) {
     return (
@@ -379,7 +451,8 @@ export default function SharePage() {
               进入合同协作
             </Typography.Title>
             <Typography.Paragraph type="secondary">
-              您收到一份合同协作邀请。为保护合同内容，请先输入您的真实姓名后再查看与编辑在线合同。
+              您收到一份合同协作邀请。为保护合同内容，请输入与合同档案一致的
+              <strong>客户姓名</strong>与<strong>预留手机号</strong>后再查看与编辑在线合同。
             </Typography.Paragraph>
             {shareInfo && (
               <Space size="middle" style={{ marginBottom: 16 }}>
@@ -391,19 +464,26 @@ export default function SharePage() {
                 )}
               </Space>
             )}
-            <Space.Compact style={{ width: '100%', maxWidth: 400 }}>
+            <Space direction="vertical" size="middle" style={{ width: '100%', maxWidth: 400 }}>
               <Input
-                placeholder="请输入您的姓名"
+                placeholder="请输入客户姓名"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                onPressEnter={handleJoin}
                 maxLength={32}
                 size="large"
               />
-              <Button type="primary" size="large" loading={joining} onClick={handleJoin}>
+              <Input
+                placeholder="请输入预留手机号"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                maxLength={20}
+                size="large"
+                onPressEnter={handleJoin}
+              />
+              <Button type="primary" size="large" loading={joining} onClick={handleJoin} block>
                 进入查看
               </Button>
-            </Space.Compact>
+            </Space>
           </Card>
         )}
 
@@ -434,6 +514,19 @@ export default function SharePage() {
                     }
                   >
                     <OnlinePresenceBar users={users} isConnected={isConnected} />
+                    <ConfirmStatusBanner
+                      progress={confirmProgress}
+                      viewerType={1}
+                      contractStatus={contract?.status ?? 0}
+                      currentVersionNo={contract?.current_version_no ?? 1}
+                      selfConfirmed={selfConfirmed}
+                    />
+                    <StaleContentBanner
+                      payload={staleVersion}
+                      onRefresh={() => void handleStaleRefresh()}
+                      onDismiss={dismissStaleVersion}
+                      disabled={isLocked}
+                    />
                     <DocumentEditor
                       ref={editorRef}
                       documentContent={documentContent}

@@ -15,11 +15,11 @@ interface ImportFormValues {
   /** 合同名称（必填） */
   contract_name: string
   /** 客户名称 */
-  customer_name?: string
+  customer_name: string
   /** 客户联系人 */
   customer_contact?: string
   /** 客户联系电话 */
-  customer_phone?: string
+  customer_phone: string
   /** 合同备注 */
   description?: string
 }
@@ -81,9 +81,9 @@ export default function ContractImportModal({
       // 组装 multipart 表单
       const formData = new FormData()
       formData.append('contract_name', values.contract_name)
-      if (values.customer_name) formData.append('customer_name', values.customer_name)
+      formData.append('customer_name', values.customer_name)
       if (values.customer_contact) formData.append('customer_contact', values.customer_contact)
-      if (values.customer_phone) formData.append('customer_phone', values.customer_phone)
+      formData.append('customer_phone', values.customer_phone.replace(/\D/g, ''))
       if (values.description) formData.append('description', values.description)
       formData.append('file', fileList[0].originFileObj as File)
 
@@ -130,14 +130,28 @@ export default function ContractImportModal({
         </Form.Item>
 
         {/* 客户信息（选填） */}
-        <Form.Item name="customer_name" label="客户名称">
-          <Input placeholder="请输入客户名称（选填）" />
+        <Form.Item
+          name="customer_name"
+          label="客户名称"
+          rules={[{ required: true, message: '请输入客户名称' }]}
+        >
+          <Input placeholder="请输入客户名称（分享门禁校验用）" />
         </Form.Item>
         <Form.Item name="customer_contact" label="客户联系人">
           <Input placeholder="请输入客户联系人（选填）" />
         </Form.Item>
-        <Form.Item name="customer_phone" label="客户联系电话">
-          <Input placeholder="请输入客户联系电话（选填）" />
+        <Form.Item
+          name="customer_phone"
+          label="客户联系电话"
+          rules={[
+            { required: true, message: '请输入客户联系电话' },
+            {
+              pattern: /^1\d{10}$/,
+              message: '请输入正确的 11 位手机号',
+            },
+          ]}
+        >
+          <Input placeholder="请输入客户联系电话（分享门禁校验用）" maxLength={20} />
         </Form.Item>
 
         {/* 合同备注（选填） */}

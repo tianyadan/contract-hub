@@ -73,6 +73,8 @@ func main() {
 
 	// 初始化 WebSocket 在线状态 Hub
 	wsHub := ws.NewHub()
+	contractService.SetBroadcaster(wsHub)
+	shareService.SetBroadcaster(wsHub)
 	internalWSHandler := ws.RegisterInternalHandler(wsHub, contractService, cfg.JWTSecret)
 	shareWSHandler := ws.ServeShare(wsHub, shareService)
 

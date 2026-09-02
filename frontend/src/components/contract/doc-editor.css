@@ -37,6 +37,17 @@
   pointer-events: none;
 }
 
+/* 测量堆叠：纵向流式排版，分页高度含 margin 折叠 */
+.doc-editor__measure-stack {
+  display: block;
+  width: 100%;
+}
+
+.doc-editor__measure-stack > * {
+  display: block;
+  width: 100%;
+}
+
 /* ---------- 可见页面 ---------- */
 .doc-editor__pages {
   display: flex;
@@ -215,6 +226,7 @@
   height: 100%;
   max-height: 100%;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 /* 统一编辑区：整篇文档共用一个 contentEditable，支持 Ctrl+A 全选与自由回车 */

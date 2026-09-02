@@ -24,6 +24,7 @@ import {
   computePaperLayout,
   dedupeBlocksById,
   findPageIndex,
+  measureStackedBlockHeights,
   paginateByHeights,
 } from '../../utils/paginateDocument'
 import FormatToolbar from './FormatToolbar'
@@ -507,13 +508,17 @@ function cloneBlocks(blocks: DocumentBlock[]): DocumentBlock[] {
   return JSON.parse(JSON.stringify(blocks)) as DocumentBlock[]
 }
 
-const MAX_UNDO_STACK = 50
+const MAX_UNDO_STACK = 5
 
 /** 文档编辑器对外暴露能力 */
 export interface DocumentEditorHandle {
   getExportRoot: () => HTMLElement | null
   preparePagesForExport: () => Promise<HTMLElement[]>
   getPageCount: () => number
+  /** 当前页码（从 0 开始） */
+  getCurrentPage: () => number
+  /** 跳转到指定页（越界时钳制） */
+  setCurrentPage: (pageIndex: number) => void
 }
 
 interface DocumentEditorProps {
@@ -644,6 +649,7 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
   const redoStackRef = useRef<DocumentBlock[][]>([])
   const inputUndoBurstRef = useRef(false)
   const inputUndoTimerRef = useRef<number | null>(null)
+  const lastContentKeyRef = useRef('')
 
   const [fixedToolbarStyle, setFixedToolbarStyle] = useState<BlockStyle | undefined>()
   const [fixedToolbarBlockId, setFixedToolbarBlockId] = useState<string | null>(null)
@@ -709,11 +715,22 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
 
     const heights: Record<string, number> = {}
     const forceBreak: Record<string, boolean> = {}
+    const measureStack = measureRoot.querySelector<HTMLElement>('.doc-editor__measure-stack')
+    const measureElements = measureStack
+      ? (Array.from(measureStack.children) as HTMLElement[])
+      : []
+
+    if (measureElements.length > 0) {
+      Object.assign(heights, measureStackedBlockHeights(measureElements))
+    }
+
     list.forEach((block) => {
-      const el = measureRoot.querySelector<HTMLElement>(
-        `[data-measure-id="${typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(block.id) : block.id.replace(/"/g, '\\"')}"]`,
-      )
-      heights[block.id] = el?.offsetHeight ?? 24
+      if (heights[block.id] == null) {
+        const el = measureRoot.querySelector<HTMLElement>(
+          `[data-measure-id="${typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(block.id) : block.id.replace(/"/g, '\\"')}"]`,
+        )
+        heights[block.id] = el?.offsetHeight ?? 24
+      }
       forceBreak[block.id] = Boolean(block.page_break_before || block.export_page_break_before)
     })
 
@@ -751,15 +768,46 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
     setPaginating(false)
   }, [blocks, layout, remasureAndPaginate])
 
+  /** 字体加载完成后再测量一次，避免首屏分页偏小 */
+  useEffect(() => {
+    if (!documentContent || isFocusedRef.current) return
+    const fonts = document.fonts
+    if (!fonts?.ready) return
+    void fonts.ready.then(() => {
+      if (!isFocusedRef.current) remasureAndPaginate()
+    })
+  }, [blocks, documentContent, remasureAndPaginate])
+
   useLayoutEffect(() => {
     if (!isFocusedRef.current) {
       frozenBlocksRef.current = blocks
     }
   }, [blocks])
 
+  /** 外部载入/刷新文档时清空撤销栈，避免撤回到旧版本 */
+  useEffect(() => {
+    const key = documentContent ? JSON.stringify(documentContent.blocks) : ''
+    if (lastContentKeyRef.current && key !== lastContentKeyRef.current && !isFocusedRef.current) {
+      undoStackRef.current = []
+      redoStackRef.current = []
+    }
+    lastContentKeyRef.current = key
+  }, [documentContent])
+
   useImperativeHandle(ref, () => ({
     getExportRoot: () => editorRef.current,
     getPageCount: () => Math.max(1, pageIdsRef.current.length),
+    getCurrentPage: () => currentPageRef.current,
+    setCurrentPage: (pageIndex: number) => {
+      const total = Math.max(1, pageIdsRef.current.length)
+      const safe = Math.min(Math.max(0, pageIndex), total - 1)
+      if (isFocusedRef.current && unifiedBodyRef.current) {
+        unifiedBodyRef.current.blur()
+      }
+      toolbarBridgeRef.current?.hide()
+      setCurrentPage(safe)
+      setEditSession((s) => s + 1)
+    },
     preparePagesForExport: async () => {
       if (unifiedBodyRef.current && isFocusedRef.current) {
         unifiedBodyRef.current.blur()
@@ -1298,8 +1346,52 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
     scheduleRepaginate(false)
   }, [scheduleRepaginate, markInputUndoBurst])
 
+  const handlePageChange = (pageIndex: number) => {
+    if (isFocusedRef.current && unifiedBodyRef.current) {
+      unifiedBodyRef.current.blur()
+    }
+    toolbarBridgeRef.current?.hide()
+    setCurrentPage(pageIndex)
+    setEditSession((s) => s + 1)
+  }
+
+  /** 键盘左右键翻页（编辑/只读通用） */
+  const tryArrowPageNav = useCallback(
+    (event: { key: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; preventDefault: () => void }) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return false
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false
+      if (paginating) return false
+      const sel = window.getSelection()
+      if (sel && !sel.isCollapsed) return false
+      const total = Math.max(1, pageIdsRef.current.length)
+      const cur = currentPageRef.current
+      if (event.key === 'ArrowLeft' && cur > 0) {
+        event.preventDefault()
+        handlePageChange(cur - 1)
+        return true
+      }
+      if (event.key === 'ArrowRight' && cur < total - 1) {
+        event.preventDefault()
+        handlePageChange(cur + 1)
+        return true
+      }
+      return false
+    },
+    [paginating],
+  )
+
+  const handleDocKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (readOnly) {
+        tryArrowPageNav(event)
+      }
+    },
+    [readOnly, tryArrowPageNav],
+  )
+
   const handleEditorKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (tryArrowPageNav(event)) return
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault()
         if (event.shiftKey) {
@@ -1323,7 +1415,7 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
         scheduleRepaginate(true)
       }
     },
-    [scheduleRepaginate, splitBlockAtCursor, performUndo, performRedo, pushUndoSnapshot],
+    [scheduleRepaginate, splitBlockAtCursor, performUndo, performRedo, pushUndoSnapshot, tryArrowPageNav],
   )
 
   const handleTableCellInteractionEnd = () => {
@@ -1364,15 +1456,6 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
       snapshot[block.id] = normalizeRuns(block)
     }
     originalRunsRef.current = snapshot
-  }
-
-  const handlePageChange = (pageIndex: number) => {
-    if (isFocusedRef.current && unifiedBodyRef.current) {
-      unifiedBodyRef.current.blur()
-    }
-    toolbarBridgeRef.current?.hide()
-    setCurrentPage(pageIndex)
-    setEditSession((s) => s + 1)
   }
 
   const buildBlockStyle = (block: DocumentBlock): CSSProperties => {
@@ -1750,7 +1833,12 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
   }, [currentPage, pageIds])
 
   return (
-    <div className="doc-editor doc-editor--paper" ref={editorRef}>
+    <div
+      className="doc-editor doc-editor--paper"
+      ref={editorRef}
+      tabIndex={readOnly ? 0 : undefined}
+      onKeyDown={handleDocKeyDown}
+    >
       {!readOnly && (
         <FloatingToolbarHost bridgeRef={toolbarBridgeRef} onStyleChange={applyStyleFromToolbar} />
       )}
@@ -1826,7 +1914,9 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
         aria-hidden
         style={{ width: layout.contentWidthPx }}
       >
-        {snapshotBlocks.map((b, i) => renderBlockNode(b, 'measure', i))}
+        <div className="doc-editor__measure-stack">
+          {snapshotBlocks.map((b, i) => renderBlockNode(b, 'measure', i))}
+        </div>
       </div>
 
       <div className="doc-editor__export-host" ref={exportHostRef} aria-hidden>

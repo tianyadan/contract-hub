@@ -51,10 +51,12 @@ import ChangeTimeline from '../../components/contract/ChangeTimeline'
 import CollapsibleScrollSection from '../../components/contract/CollapsibleScrollSection'
 import VersionHistoryList from '../../components/contract/VersionHistoryList'
 import OnlinePresenceBar from '../../components/contract/OnlinePresenceBar'
+import ConfirmStatusBanner from '../../components/contract/ConfirmStatusBanner'
+import StaleContentBanner from '../../components/contract/StaleContentBanner'
 import ConfirmActionBar from '../../components/contract/ConfirmActionBar'
 import ContractShareModal from '../../components/contract/ContractShareModal'
 import DocxPreview from '../../components/contract/DocxPreview'
-import { usePresence } from '../../hooks/usePresence'
+import { useCollaboration } from '../../hooks/useCollaboration'
 import { isContractLocked, normalizeDocumentContent, prepareSaveDocumentContent } from '../../utils/documentContent'
 import { hasUserConfirmedVersion, willFinalizeAfterConfirm } from '../../utils/confirmProgress'
 import { getStoredUser } from '../../utils/token'
@@ -78,7 +80,7 @@ export default function ContractDetailPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const contractId = Number(id)
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
 
   const [detail, setDetail] = useState<ContractDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -98,12 +100,32 @@ export default function ContractDetailPage() {
   const [previewData, setPreviewData] = useState<ArrayBuffer | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewTried, setPreviewTried] = useState(false)
-  const { users, isConnected } = usePresence(contractId)
+
+  const fetchContractConfirmProgress = useCallback(
+    () => getConfirmProgress(contractId),
+    [contractId],
+  )
+
+  const me = getStoredUser()
+  const {
+    users,
+    isConnected,
+    confirmProgress,
+    setConfirmProgress,
+    staleVersion,
+    dismissStaleVersion,
+  } = useCollaboration({
+    contractId,
+    selfRole: 'owner',
+    selfName: me?.username,
+    fetchConfirmProgress: contractId ? fetchContractConfirmProgress : undefined,
+    enabled: Boolean(contractId),
+  })
 
   const isLocked = detail ? isContractLocked(detail.status) : false
   const editorReadOnly = Boolean(viewingVersion) || isLocked
 
-  const loadDetail = useCallback(async () => {
+  const loadDetail = useCallback(async (restorePage?: number) => {
     if (!contractId) return
     setLoading(true)
     try {
@@ -116,6 +138,11 @@ export default function ContractDetailPage() {
       setViewingVersion(null)
       setPreviewData(null)
       setPreviewTried(false)
+      if (restorePage != null) {
+        requestAnimationFrame(() => {
+          editorRef.current?.setCurrentPage(restorePage)
+        })
+      }
     } catch {
       message.error('合同加载失败')
     } finally {
@@ -139,18 +166,20 @@ export default function ContractDetailPage() {
   const loadChangesAndVersions = useCallback(async () => {
     if (!contractId) return
     try {
-      const [changeRes, versionRes, confirmRes] = await Promise.all([
+      const [changeRes, versionRes, confirmRes, progress] = await Promise.all([
         getContractChanges(contractId, { page: 1, page_size: 50 }),
         getContractVersions(contractId, { page: 1, page_size: 50 }),
         getContractConfirmations(contractId),
+        getConfirmProgress(contractId),
       ])
       setChanges(changeRes.list)
       setVersions(versionRes.list)
       setConfirmations(confirmRes)
+      setConfirmProgress(progress)
     } catch {
       // 错误提示已在拦截器处理
     }
-  }, [contractId])
+  }, [contractId, setConfirmProgress])
 
   useEffect(() => {
     loadDetail()
@@ -165,6 +194,37 @@ export default function ContractDetailPage() {
   const hasChanges = useMemo(() => {
     return originalSnapshot !== '' && JSON.stringify(documentContent) !== originalSnapshot
   }, [documentContent, originalSnapshot])
+
+  const hasShareGateInfo = Boolean(
+    detail?.customer_name?.trim() && detail?.customer_phone?.replace(/\D/g, '').length === 11,
+  )
+
+  /** 对方保存后刷新正文并保留当前页码 */
+  const handleStaleRefresh = async () => {
+    if (viewingVersion) {
+      message.info('请先返回当前版本再刷新')
+      return
+    }
+    const savedPage = editorRef.current?.getCurrentPage() ?? 0
+    const hasLocalChanges = hasChanges
+    const doRefresh = async () => {
+      dismissStaleVersion()
+      await Promise.all([loadDetail(savedPage), loadChangesAndVersions()])
+    }
+    if (hasLocalChanges) {
+      modal.confirm({
+        title: '刷新将丢弃未保存修改',
+        content: '对方已保存新版本，刷新后您当前的未保存修改将丢失。是否继续？',
+        onOk: () => void doRefresh(),
+      })
+    } else {
+      await doRefresh()
+    }
+  }
+
+  const selfConfirmed =
+    detail?.current_version_id != null &&
+    hasUserConfirmedVersion(confirmations, detail.current_version_id, 0, me?.id, undefined)
 
   const handleSaveVersion = async () => {
     if (document.activeElement instanceof HTMLElement) {
@@ -223,10 +283,10 @@ export default function ContractDetailPage() {
       return
     }
 
-    const me = getStoredUser()
+    const meUser = getStoredUser()
     const versionId = detail.current_version_id
     if (
-      hasUserConfirmedVersion(confirmations, versionId, 0, me?.id, undefined)
+      hasUserConfirmedVersion(confirmations, versionId, 0, meUser?.id, undefined)
     ) {
       message.info('您已确认过当前版本')
       return
@@ -395,7 +455,17 @@ export default function ContractDetailPage() {
 
         <div className="contract-detail__header-actions">
           <Space>
-            <Button icon={<ShareAltOutlined />} onClick={() => setShareOpen(true)}>
+            <Button
+              icon={<ShareAltOutlined />}
+              disabled={!hasShareGateInfo}
+              onClick={() => {
+                if (!hasShareGateInfo) {
+                  message.warning('请先完善合同的客户姓名与预留手机号后再分享')
+                  return
+                }
+                setShareOpen(true)
+              }}
+            >
               分享
             </Button>
             <ConfirmActionBar
@@ -450,6 +520,19 @@ export default function ContractDetailPage() {
             className="contract-detail__editor-card"
           >
             <OnlinePresenceBar users={users} isConnected={isConnected} />
+            <ConfirmStatusBanner
+              progress={confirmProgress}
+              viewerType={0}
+              contractStatus={detail.status}
+              currentVersionNo={detail.current_version_no}
+              selfConfirmed={selfConfirmed}
+            />
+            <StaleContentBanner
+              payload={staleVersion}
+              onRefresh={() => void handleStaleRefresh()}
+              onDismiss={dismissStaleVersion}
+              disabled={Boolean(viewingVersion) || isLocked}
+            />
             <DocumentEditor
               ref={editorRef}
               documentContent={

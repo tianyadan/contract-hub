@@ -5,6 +5,7 @@ import { ArrowLeftOutlined, HistoryOutlined, SaveOutlined } from '@ant-design/ic
 import { getTemplateDetail, saveTemplateContent } from '../../api/templateApi'
 import {
   createTemplateFidelitySnapshot,
+  fetchTemplateFidelitySnapshotPdf,
   getTemplateFidelitySnapshot,
   getTemplateFidelitySnapshots,
   rollbackTemplateFidelitySnapshot,
@@ -66,6 +67,7 @@ export default function TemplateDetailPage() {
       create: (payload: Parameters<typeof createTemplateFidelitySnapshot>[1]) =>
         createTemplateFidelitySnapshot(templateId, payload),
       getDetail: (snapshotId: number) => getTemplateFidelitySnapshot(templateId, snapshotId),
+      fetchPdf: (snapshotId: number) => fetchTemplateFidelitySnapshotPdf(templateId, snapshotId),
       rollback: (snapshotId: number) => rollbackTemplateFidelitySnapshot(templateId, snapshotId),
     }),
     [templateId],
@@ -218,9 +220,9 @@ export default function TemplateDetailPage() {
 
       <FidelityPdfViewer
         open={fidelity.previewOpen}
-        pdfUrl={fidelity.previewUrl}
+        loadPdf={fidelity.previewLoadPdf}
         title={fidelity.previewTitle}
-        onClose={() => fidelity.setPreviewOpen(false)}
+        onClose={() => fidelity.setPreviewOpen()}
       />
     </div>
   )

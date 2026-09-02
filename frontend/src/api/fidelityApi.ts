@@ -1,4 +1,4 @@
-import { requestTyped } from './request'
+import { requestBlob, requestTyped } from './request'
 import type { FidelitySnapshot, FidelitySnapshotDetail } from '../types/fidelity'
 import type { DocumentContent } from '../types/contract'
 
@@ -10,7 +10,7 @@ export function getContractFidelitySnapshots(contractId: number): Promise<Fideli
   })
 }
 
-/** 获取合同高保真快照详情（含 PDF 签名 URL） */
+/** 获取合同高保真快照详情 */
 export function getContractFidelitySnapshot(
   contractId: number,
   snapshotId: number,
@@ -19,6 +19,19 @@ export function getContractFidelitySnapshot(
     url: `/contracts/${contractId}/fidelity-snapshots/${snapshotId}`,
     method: 'get',
   })
+}
+
+/** 通过后端代理获取合同快照 PDF（用于内嵌预览） */
+export async function fetchContractFidelitySnapshotPdf(
+  contractId: number,
+  snapshotId: number,
+): Promise<Blob> {
+  const res = await requestBlob({
+    url: `/contracts/${contractId}/fidelity-snapshots/${snapshotId}/pdf`,
+    method: 'get',
+    timeout: 120000,
+  })
+  return res.data
 }
 
 /** 上传合同高保真快照 */
@@ -101,6 +114,19 @@ export async function createTemplateFidelitySnapshot(
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 120000,
   })
+}
+
+/** 获取模板高保真快照 PDF（后端代理，供内嵌预览） */
+export async function fetchTemplateFidelitySnapshotPdf(
+  templateId: number,
+  snapshotId: number,
+): Promise<Blob> {
+  const res = await requestBlob({
+    url: `/templates/${templateId}/fidelity-snapshots/${snapshotId}/pdf`,
+    method: 'get',
+    timeout: 120000,
+  })
+  return res.data
 }
 
 /** 回退模板至高保真快照 */

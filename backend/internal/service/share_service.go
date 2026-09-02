@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lshc/contract-hub/backend/internal/collab"
 	"github.com/lshc/contract-hub/backend/internal/docengine"
 	"github.com/lshc/contract-hub/backend/internal/documentdiff"
 	"github.com/lshc/contract-hub/backend/internal/model"
@@ -26,6 +27,8 @@ var (
 	ErrShareMaxAccess        = errors.New("分享链接访问次数已达上限")
 	ErrCollaboratorNotFound  = errors.New("协作者不存在，请先输入姓名加入")
 	ErrSharePermissionDenied = errors.New("当前分享链接为只读，不允许编辑")
+	ErrShareGateMismatch     = errors.New("姓名或预留手机号不正确")
+	ErrShareGateIncomplete   = errors.New("合同未维护客户姓名与手机号，无法创建分享链接")
 )
 
 // ShareService 分享链接、外部协作者和确认业务逻辑。
@@ -35,6 +38,7 @@ type ShareService struct {
 	docEngine   *docengine.Client
 	oss         *oss.Client
 	contractSvc *ContractService
+	broadcaster collab.Broadcaster
 }
 
 // NewShareService 创建分享服务。
@@ -54,6 +58,11 @@ func NewShareService(
 	}
 }
 
+// SetBroadcaster 注入协作事件广播器（避免与 Hub 循环依赖）。
+func (s *ShareService) SetBroadcaster(b collab.Broadcaster) {
+	s.broadcaster = b
+}
+
 // CreateShareInput 创建分享链接入参。
 type CreateShareInput struct {
 	ContractID  int64
@@ -64,10 +73,11 @@ type CreateShareInput struct {
 
 // SharePublicVO 外部分享入口概要（加入前不暴露合同正文信息）。
 type SharePublicVO struct {
-	Permission     int8       `json:"permission"`
-	PermissionText string     `json:"permission_text"`
-	Status         int8       `json:"status"`
-	ExpireTime     *time.Time `json:"expire_time,omitempty"`
+	Permission        int8       `json:"permission"`
+	PermissionText    string     `json:"permission_text"`
+	Status            int8       `json:"status"`
+	ExpireTime        *time.Time `json:"expire_time,omitempty"`
+	RequiresPhoneGate bool       `json:"requires_phone_gate"`
 }
 
 // ShareInfoVO 分享概要返回（内部创建分享时使用）。
@@ -113,6 +123,9 @@ func (s *ShareService) CreateShare(ctx context.Context, input CreateShareInput) 
 	}
 	if detail == nil {
 		return nil, ErrContractNotFound
+	}
+	if !HasShareGateInfo(detail.Contract.CustomerName, detail.Contract.CustomerPhone) {
+		return nil, ErrShareGateIncomplete
 	}
 
 	token, err := generateShareToken()
@@ -168,17 +181,19 @@ func (s *ShareService) GetShareInfo(ctx context.Context, token string) (*SharePu
 	}
 
 	return &SharePublicVO{
-		Permission:     share.Permission,
-		PermissionText: sharePermissionText(share.Permission),
-		Status:         share.Status,
-		ExpireTime:     share.ExpireTime,
+		Permission:        share.Permission,
+		PermissionText:    sharePermissionText(share.Permission),
+		Status:            share.Status,
+		ExpireTime:        share.ExpireTime,
+		RequiresPhoneGate: true,
 	}, nil
 }
 
-// Join 外部协作者输入姓名加入协作。
-func (s *ShareService) Join(ctx context.Context, token, name string) (*CollaboratorVO, error) {
+// Join 外部协作者输入姓名与预留手机号加入协作。
+func (s *ShareService) Join(ctx context.Context, token, name, phone string) (*CollaboratorVO, error) {
 	name = strings.TrimSpace(name)
-	if name == "" {
+	phone = strings.TrimSpace(phone)
+	if name == "" || phone == "" {
 		return nil, ErrInvalidInput
 	}
 
@@ -187,8 +202,14 @@ func (s *ShareService) Join(ctx context.Context, token, name string) (*Collabora
 		return nil, err
 	}
 
+	if !MatchShareGate(contract.CustomerName, contract.CustomerPhone, name, phone) {
+		return nil, ErrShareGateMismatch
+	}
+
+	normalizedName := NormalizeCustomerName(name)
+
 	// 查找已有协作者，没有则创建
-	collaborator, err := s.shares.GetCollaboratorByContractAndName(ctx, contract.ID, name)
+	collaborator, err := s.shares.GetCollaboratorByContractAndName(ctx, contract.ID, normalizedName)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +219,7 @@ func (s *ShareService) Join(ctx context.Context, token, name string) (*Collabora
 		collaborator = &model.ContractCollaborator{
 			ID:               nextID(),
 			ContractID:       contract.ID,
-			Name:             name,
+			Name:             normalizedName,
 			CollaboratorType: 1, // 外部客户
 			Permission:       share.Permission,
 			Status:           1,
@@ -470,6 +491,13 @@ func (s *ShareService) ShareSaveVersion(ctx context.Context, token, name string,
 
 	_ = s.contracts.UpdateContractStatus(ctx, contract.ID, 2)
 
+	s.broadcastVersionSaved(contract.ID, collab.VersionSavedPayload{
+		VersionID:   newVersionID,
+		VersionNo:   newVersionNo,
+		SavedBy:     collaborator.Name,
+		SavedByRole: "collaborator",
+	})
+
 	return &SaveVersionResult{
 		ContractID:  contract.ID,
 		VersionID:   newVersionID,
@@ -556,6 +584,12 @@ func (s *ShareService) ShareConfirmWithPdf(
 		CreateTime:     now,
 	}
 	return s.contractSvc.ProcessConfirmation(ctx, contract.ID, *contract.CurrentVersionID, confirmation, input)
+}
+
+func (s *ShareService) broadcastVersionSaved(contractID int64, payload collab.VersionSavedPayload) {
+	if s.broadcaster != nil {
+		s.broadcaster.BroadcastVersionSaved(contractID, payload)
+	}
 }
 
 // GetConfirmProgress 内部用户查询当前版本确认进度。

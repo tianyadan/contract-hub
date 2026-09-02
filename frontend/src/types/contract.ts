@@ -287,6 +287,7 @@ export interface SharePublicInfo {
   permission_text: string
   status: number
   expire_time?: string
+  requires_phone_gate?: boolean
 }
 
 /** 分享链接信息（后端 ShareInfoVO，内部创建分享时返回） */
@@ -327,6 +328,23 @@ export interface ConfirmProgress {
   has_external_confirm: boolean
   pending_parties: string[]
   will_finalize_on_next: boolean
+}
+
+/** WebSocket 确认进度推送 */
+export interface ConfirmProgressWsPayload {
+  version_id: number
+  has_internal_confirm: boolean
+  has_external_confirm: boolean
+  requires_dual_confirm: boolean
+  contract_status: number
+}
+
+/** WebSocket 版本保存推送 */
+export interface VersionSavedWsPayload {
+  version_id: number
+  version_no: number
+  saved_by: string
+  saved_by_role: 'owner' | 'collaborator'
 }
 
 /** 创建分享链接请求参数 */

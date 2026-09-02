@@ -66,6 +66,28 @@ func (h *FidelityHandler) CreateContractSnapshot(c *gin.Context) {
 	response.Success(c, http.StatusCreated, "高保真阅览已生成", result)
 }
 
+// StreamContractSnapshotPdf 代理输出合同快照 PDF（内嵌预览）。
+func (h *FidelityHandler) StreamContractSnapshotPdf(c *gin.Context) {
+	contractID, err := parsePathID(c, "id")
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, 40001, "合同ID不合法")
+		return
+	}
+	snapshotID, err := parsePathID(c, "snapshotId")
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, 40001, "快照ID不合法")
+		return
+	}
+	data, fileName, err := h.svc.GetContractSnapshotPdf(c.Request.Context(), contractID, snapshotID, middleware.GetUserID(c))
+	if err != nil {
+		writeFidelityError(c, err)
+		return
+	}
+	c.Header("Content-Type", "application/pdf")
+	c.Header("Content-Disposition", "inline; filename=\""+fileName+"\"")
+	c.Data(http.StatusOK, "application/pdf", data)
+}
+
 // GetContractSnapshot 合同高保真快照详情。
 func (h *FidelityHandler) GetContractSnapshot(c *gin.Context) {
 	contractID, err := parsePathID(c, "id")
@@ -155,6 +177,28 @@ func (h *FidelityHandler) CreateTemplateSnapshot(c *gin.Context) {
 		return
 	}
 	response.Success(c, http.StatusCreated, "高保真阅览已生成", result)
+}
+
+// StreamTemplateSnapshotPdf 代理输出模板快照 PDF（内嵌预览）。
+func (h *FidelityHandler) StreamTemplateSnapshotPdf(c *gin.Context) {
+	templateID, err := parsePathID(c, "id")
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, 40001, "模板ID不合法")
+		return
+	}
+	snapshotID, err := parsePathID(c, "snapshotId")
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, 40001, "快照ID不合法")
+		return
+	}
+	data, fileName, err := h.svc.GetTemplateSnapshotPdf(c.Request.Context(), templateID, snapshotID, middleware.GetUserID(c))
+	if err != nil {
+		writeFidelityError(c, err)
+		return
+	}
+	c.Header("Content-Type", "application/pdf")
+	c.Header("Content-Disposition", "inline; filename=\""+fileName+"\"")
+	c.Data(http.StatusOK, "application/pdf", data)
 }
 
 // GetTemplateSnapshot 模板高保真快照详情。

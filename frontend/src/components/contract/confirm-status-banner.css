@@ -1,0 +1,10 @@
+.confirm-status-banner {
+  margin-bottom: 12px;
+}
+
+.confirm-status-banner--dual {
+  padding: 10px 12px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+}

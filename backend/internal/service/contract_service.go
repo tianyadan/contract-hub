@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lshc/contract-hub/backend/internal/collab"
 	"github.com/lshc/contract-hub/backend/internal/docengine"
 	"github.com/lshc/contract-hub/backend/internal/documentdiff"
 	"github.com/lshc/contract-hub/backend/internal/model"
@@ -44,6 +45,7 @@ type ContractService struct {
 	oss             *oss.Client
 	docEngine       *docengine.Client
 	publicWebOrigin string
+	broadcaster     collab.Broadcaster
 }
 
 // NewContractService 创建合同服务。
@@ -65,6 +67,11 @@ func NewContractService(
 		docEngine:       docEngine,
 		publicWebOrigin: publicWebOrigin,
 	}
+}
+
+// SetBroadcaster 注入协作事件广播器。
+func (s *ContractService) SetBroadcaster(b collab.Broadcaster) {
+	s.broadcaster = b
 }
 
 // CreateContractInput 创建合同入参。
@@ -430,6 +437,19 @@ func (s *ContractService) SaveVersion(ctx context.Context, input SaveVersionInpu
 
 	if err := s.contracts.CreateVersionWithChanges(ctx, input.ContractID, version, changes, audit); err != nil {
 		return nil, err
+	}
+
+	if s.broadcaster != nil {
+		savedBy := strings.TrimSpace(input.Username)
+		if savedBy == "" {
+			savedBy = "内部用户"
+		}
+		s.broadcaster.BroadcastVersionSaved(input.ContractID, collab.VersionSavedPayload{
+			VersionID:   newVersionID,
+			VersionNo:   newVersionNo,
+			SavedBy:     savedBy,
+			SavedByRole: "owner",
+		})
 	}
 
 	return &SaveVersionResult{
