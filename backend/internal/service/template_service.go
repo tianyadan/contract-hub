@@ -89,6 +89,7 @@ func (s *TemplateService) Upload(ctx context.Context, input UploadTemplateInput)
 		_ = s.oss.DeleteObject(ctx, objectKey)
 		return nil, fmt.Errorf("%w: %v", ErrDocParseFailed, err)
 	}
+	normalizeWebCanvasDocument(parsedData)
 	parsedJSON, err := json.Marshal(parsedData)
 	if err != nil {
 		_ = s.oss.DeleteObject(ctx, objectKey)
@@ -301,6 +302,8 @@ func (s *TemplateService) SaveContent(ctx context.Context, input SaveTemplateCon
 	if detail == nil || detail.Version == nil {
 		return nil, ErrTemplateNotFound
 	}
+
+	normalizeWebCanvasDocument(input.DocumentContent)
 
 	now := time.Now()
 	newVersionNo := detail.Template.CurrentVersionNo + 1

@@ -490,7 +490,9 @@ function findBlockElementFromSelection(root: HTMLElement): HTMLElement | null {
   if (!selection?.rangeCount) return null
   const node = selection.getRangeAt(0).commonAncestorContainer
   const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement
-  const block = el?.closest<HTMLElement>('[data-block-id]')
+  const block =
+    el?.closest<HTMLElement>('[data-block-id]') ??
+    el?.closest<HTMLElement>('[data-editable-block-id]')
   if (!block || !root.contains(block)) return null
   return block
 }
@@ -712,7 +714,7 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
         `[data-measure-id="${typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(block.id) : block.id.replace(/"/g, '\\"')}"]`,
       )
       heights[block.id] = el?.offsetHeight ?? 24
-      forceBreak[block.id] = Boolean(block.page_break_before)
+      forceBreak[block.id] = Boolean(block.page_break_before || block.export_page_break_before)
     })
 
     const nextPages = paginateByHeights(
@@ -1148,7 +1150,7 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
     const blockEl = findBlockElementFromSelection(unifiedEl)
     if (!blockEl || blockEl.dataset.blockKind === 'table') return false
 
-    const blockId = blockEl.dataset.blockId
+    const blockId = blockEl.dataset.blockId ?? blockEl.dataset.editableBlockId
     if (!blockId) return false
 
     const selection = window.getSelection()
@@ -1241,7 +1243,7 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
     } as DocumentContent
 
     scheduleEmitChange(withBreaks)
-    setLiveMeasureBlocks(withBreaks)
+    setLiveMeasureBlocks([...withBreaks])
     return true
   }, [readOnly, scheduleEmitChange, applyOverflowBreaksFromLiveDom, pushUndoSnapshot])
 

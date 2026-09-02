@@ -55,7 +55,7 @@ import ConfirmActionBar from '../../components/contract/ConfirmActionBar'
 import ContractShareModal from '../../components/contract/ContractShareModal'
 import DocxPreview from '../../components/contract/DocxPreview'
 import { usePresence } from '../../hooks/usePresence'
-import { isContractLocked, normalizeDocumentContent } from '../../utils/documentContent'
+import { isContractLocked, normalizeDocumentContent, prepareSaveDocumentContent } from '../../utils/documentContent'
 import { hasUserConfirmedVersion, willFinalizeAfterConfirm } from '../../utils/confirmProgress'
 import { getStoredUser } from '../../utils/token'
 import {
@@ -183,11 +183,9 @@ export default function ContractDetailPage() {
       message.info('文档没有修改，无需保存新版本')
       return
     }
-    const payload: DocumentContent = {
-      ...latestContent,
-      schema_version: 3,
-      render_mode: 'web_canvas',
-    }
+  const payload: DocumentContent = prepareSaveDocumentContent({
+    ...latestContent,
+  })
     setSaving(true)
     try {
       const result = await saveContractVersion(contractId, {

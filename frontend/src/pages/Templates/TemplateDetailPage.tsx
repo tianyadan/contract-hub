@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { App, Button, Card, Col, Input, Row, Space, Typography } from 'antd'
+import { App, Button, Card, Col, Input, Row, Space, Tag, Typography } from 'antd'
 import { ArrowLeftOutlined, HistoryOutlined, SaveOutlined } from '@ant-design/icons'
 import { getTemplateDetail, saveTemplateContent } from '../../api/templateApi'
 import {
@@ -16,11 +16,12 @@ import CollapsibleScrollSection from '../../components/contract/CollapsibleScrol
 import FidelityPdfViewer from '../../components/contract/FidelityPdfViewer'
 import FidelitySnapshotList from '../../components/contract/FidelitySnapshotList'
 import { useFidelitySnapshots } from '../../hooks/useFidelitySnapshots'
-import { normalizeDocumentContent } from '../../utils/documentContent'
+import { normalizeDocumentContent, prepareSaveDocumentContent } from '../../utils/documentContent'
+import '../ContractDetail/contract-detail.css'
 import './template-detail.css'
 
 /**
- * 模板详情页：默认结构化编辑 + 手动高保真阅览。
+ * 模板池合同编辑页：与合同管理详情页共用同一 DocumentEditor 与 V3 网页画布规范。
  */
 export default function TemplateDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -37,28 +38,14 @@ export default function TemplateDetailPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  /** 解析 JSON 文档内容 */
-  const parseContent = (raw: unknown): DocumentContent | null => {
-    if (!raw) return null
-    if (typeof raw === 'object') return raw as DocumentContent
-    if (typeof raw === 'string') {
-      try {
-        return JSON.parse(raw) as DocumentContent
-      } catch {
-        return null
-      }
-    }
-    return null
-  }
-
-  /** 加载模板详情（不再请求 DOCX 预览） */
+  /** 加载模板详情（与合同详情相同：normalizeDocumentContent） */
   const loadData = useCallback(async () => {
     if (!templateId) return
     setLoading(true)
     try {
       const tpl = await getTemplateDetail(templateId)
       setDetail(tpl)
-      const content = normalizeDocumentContent(parseContent(tpl.version?.document_content))
+      const content = normalizeDocumentContent(tpl.version?.document_content)
       setDocumentContent(content)
       contentRef.current = content
       setOriginalSnapshot(JSON.stringify(content))
@@ -102,18 +89,29 @@ export default function TemplateDetailPage() {
     }
   }, [templateId, fidelity.loadSnapshots])
 
-  /** 保存模板结构化内容 */
+  /** 编辑器内容变更（与合同详情 handleEditorChange 一致） */
+  const handleEditorChange = (content: DocumentContent) => {
+    contentRef.current = content
+    setDocumentContent(content)
+  }
+
+  /** 保存模板（与合同 saveVersion 相同：写入 web_canvas 快照） */
   const handleSave = async () => {
-    const content = contentRef.current
-    if (!content) {
-      message.warning('暂无文档内容')
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
+    const latestContent = contentRef.current
+    if (!latestContent || JSON.stringify(latestContent) === originalSnapshot) {
+      message.info('文档没有修改，无需保存')
       return
     }
+    const payload = prepareSaveDocumentContent(latestContent)
     setSaving(true)
     try {
-      await saveTemplateContent(templateId, content, changeSummary || '更新模板内容')
+      await saveTemplateContent(templateId, payload, changeSummary || '更新模板内容')
       message.success('保存成功')
       setChangeSummary('')
+      setOriginalSnapshot(JSON.stringify(payload))
       await loadData()
     } finally {
       setSaving(false)
@@ -121,46 +119,67 @@ export default function TemplateDetailPage() {
   }
 
   if (loading && !detail) {
-    return <Card loading style={{ maxWidth: 1400, margin: '0 auto' }} />
+    return (
+      <div className="template-detail">
+        <Card>
+          <Typography.Text type="secondary">加载中…</Typography.Text>
+        </Card>
+      </div>
+    )
   }
 
   return (
-    <div className="template-detail">
-      <div className="template-detail__header">
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/templates')}>
-          返回模板池
-        </Button>
-        <Space orientation="vertical" size={0}>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {detail?.template_name}
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            {detail?.original_file_name} · V{detail?.current_version_no}
-          </Typography.Text>
-        </Space>
-        <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>
-          保存模板
-        </Button>
-      </div>
+    <div className="template-detail contract-detail">
+      <Card className="contract-detail__header" styles={{ body: { padding: '16px 20px' } }}>
+        <div className="contract-detail__header-main">
+          <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/templates')}>
+            返回模板池
+          </Button>
+          <div className="contract-detail__title-block">
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              {detail?.template_name}
+            </Typography.Title>
+            <Space size="small" className="contract-detail__meta">
+              <Typography.Text type="secondary">{detail?.original_file_name}</Typography.Text>
+              <Tag>V{detail?.current_version_no}</Tag>
+            </Space>
+          </div>
+        </div>
+        <div className="contract-detail__header-actions">
+          <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>
+            保存模板
+          </Button>
+        </div>
+      </Card>
 
-      <Row gutter={16}>
+      <Row gutter={16} className="contract-detail__body">
         <Col xs={24} lg={16}>
-          <Card title="合同模板维护（网页编辑）">
+          <Card
+            title={
+              <Space>
+                <Typography.Text strong>文档内容</Typography.Text>
+                {originalSnapshot !== '' &&
+                  JSON.stringify(documentContent) !== originalSnapshot && (
+                    <Tag color="orange">有未保存修改</Tag>
+                  )}
+              </Space>
+            }
+            className="contract-detail__editor-card"
+          >
             <DocumentEditor
               ref={editorRef}
               documentContent={documentContent}
-              onChange={(c) => {
-                setDocumentContent(c)
-                contentRef.current = c
-              }}
+              onChange={handleEditorChange}
+              emptyText="该模板暂无文档内容"
             />
-            <Input
-              style={{ marginTop: 12 }}
-              placeholder="本次修改说明（选填）"
-              value={changeSummary}
-              onChange={(e) => setChangeSummary(e.target.value)}
-              maxLength={200}
-            />
+            <div className="contract-detail__save-bar">
+              <Input
+                placeholder="本次修改说明（选填）"
+                value={changeSummary}
+                onChange={(e) => setChangeSummary(e.target.value)}
+                maxLength={200}
+              />
+            </div>
           </Card>
         </Col>
 

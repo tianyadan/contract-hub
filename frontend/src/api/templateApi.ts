@@ -30,9 +30,18 @@ export async function getTemplateList(params?: TemplateListParams): Promise<Temp
   return requestTyped({ url: '/templates', method: 'GET', params })
 }
 
-/** 模板详情 */
+/** 模板详情（解析 document_content，与合同详情一致） */
 export async function getTemplateDetail(id: number): Promise<TemplateDetail> {
-  return requestTyped({ url: `/templates/${id}`, method: 'GET' })
+  const detail = await requestTyped<TemplateDetail>({ url: `/templates/${id}`, method: 'GET' })
+  const raw = detail.version?.document_content
+  if (raw && typeof raw === 'string') {
+    try {
+      detail.version!.document_content = JSON.parse(raw) as DocumentContent
+    } catch {
+      detail.version!.document_content = ''
+    }
+  }
+  return detail
 }
 
 /** 更新模板名称与说明 */

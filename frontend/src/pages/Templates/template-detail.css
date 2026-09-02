@@ -1,13 +1,3 @@
 .template-detail {
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-.template-detail__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
+  width: 100%;
 }

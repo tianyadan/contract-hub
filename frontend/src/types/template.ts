@@ -1,5 +1,7 @@
 /** 合同模板相关类型 */
 
+import type { DocumentContent } from './contract'
+
 export interface TemplateListItem {
   id: number
   template_name: string
@@ -16,7 +18,7 @@ export interface TemplateVersionVO {
   oss_url: string
   file_name: string
   file_size: number
-  document_content: string
+  document_content: string | DocumentContent
   change_summary: string
   create_time: string
 }
