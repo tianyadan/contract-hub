@@ -1,0 +1,97 @@
+/* 管理系统主布局样式 */
+
+.main-layout {
+  min-height: 100vh;
+}
+
+/* 侧边栏 */
+.main-layout__sider {
+  background: #ffffff !important;
+  border-right: 1px solid #f0f0f0;
+}
+
+/* 侧边栏品牌区 */
+.main-layout__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 64px;
+  padding: 0 16px;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.main-layout__brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.main-layout__brand-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1f2937;
+  letter-spacing: 2px;
+}
+
+.main-layout__brand-sub {
+  font-size: 12px;
+  color: #8c8c8c;
+  letter-spacing: 1px;
+}
+
+/* 菜单 */
+.main-layout__menu {
+  border-inline-end: none !important;
+  padding: 8px;
+}
+
+.main-layout__menu .ant-menu-item {
+  border-radius: 8px;
+  margin-block: 4px;
+}
+
+.main-layout__menu .ant-menu-item-selected {
+  background: rgba(0, 185, 107, 0.12) !important;
+  color: #00a36a !important;
+  font-weight: 500;
+}
+
+/* 顶部栏 */
+.main-layout__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  padding: 0 24px;
+  background: #ffffff;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.main-layout__header-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.main-layout__header-user {
+  font-size: 14px;
+  color: #1f2937;
+}
+
+.main-layout__header-caret {
+  font-size: 12px;
+  color: #8c8c8c;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.main-layout__header-caret:hover {
+  color: #00a36a;
+}
+
+/* 内容区 */
+.main-layout__content {
+  padding: 24px;
+  overflow: auto;
+}

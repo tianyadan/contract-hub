@@ -1,0 +1,69 @@
+/* 外部协作者访问页样式（公开页面，不套主布局） */
+
+.share-page {
+  min-height: 100vh;
+  background: #f5f7f6;
+  display: flex;
+  flex-direction: column;
+}
+
+.share-page--center {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+/* 顶部品牌条 */
+.share-page__brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 24px;
+  background: linear-gradient(135deg, #14c98f 0%, #00b96b 60%, #00915a 100%);
+  color: #ffffff;
+}
+
+.share-page__brand-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ffffff;
+  display: inline-block;
+}
+
+.share-page__brand-name {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+/* 内容区 */
+.share-page__content {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+/* 合同概要卡片 */
+.share-page__info {
+  margin-bottom: 16px;
+}
+
+/* 加入协作卡片 */
+.share-page__join {
+  text-align: center;
+  padding: 40px 24px;
+}
+
+.share-page__join .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* 操作卡片 */
+.share-page__actions {
+  margin-top: 16px;
+}

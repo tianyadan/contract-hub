@@ -1,0 +1,48 @@
+/* 登录页面布局：左右分栏 */
+
+.login-page {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* 右侧表单区：白色背景，垂直居中；内容超高时允许滚动 */
+.login-page__main {
+  display: flex;
+  justify-content: center;
+  flex: 1 1 44%;
+  min-width: 420px;
+  padding: 48px 32px;
+  background: #ffffff;
+  overflow-y: auto;
+}
+
+/* 表单卡片容器（margin:auto 保证超高时可正常滚动到顶部） */
+.login-card {
+  width: 100%;
+  max-width: 440px;
+  margin: auto 0;
+}
+
+.login-card__header {
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.login-card__title {
+  margin-bottom: 4px;
+  letter-spacing: 1px;
+}
+
+/* 底部协议提示 */
+.login-card__agreement {
+  margin-top: 28px;
+  text-align: center;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+@media (max-width: 720px) {
+  .login-page__main {
+    min-width: 0;
+  }
+}

@@ -1,0 +1,41 @@
+/* 首页样式 */
+
+.home__header {
+  margin-bottom: 20px;
+}
+
+/* 统计卡片区：自动换行的弹性网格 */
+.home__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+/* 最近合同卡片 */
+.home__recent-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+/* 合同名称单元格：图标 + 名称 + 编号 */
+.home-recent__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.home-recent__name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-recent__no {
+  font-size: 12px;
+  color: #8c8c8c;
+  flex-shrink: 0;
+}

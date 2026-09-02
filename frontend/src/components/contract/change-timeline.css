@@ -1,0 +1,79 @@
+/* 变更记录时间线样式 */
+
+.change-timeline {
+  padding: 8px 4px;
+}
+
+.change-timeline__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.change-timeline__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.change-timeline__time {
+  font-size: 12px;
+}
+
+.change-timeline__body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(0, 0, 0, 0.65);
+  word-break: break-all;
+}
+
+.change-timeline__summary {
+  margin-top: 4px;
+}
+
+.change-timeline__changes {
+  margin-top: 8px;
+  padding-left: 8px;
+  border-left: 2px solid #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.change-timeline__changes--empty {
+  border-left-color: transparent;
+  padding-left: 0;
+}
+
+.change-timeline__change {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.change-timeline__diff {
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+/* 修改内容：蓝色 */
+.change-timeline__modify {
+  color: #1677ff;
+  font-weight: 500;
+}
+
+/* 新增内容：绿色高亮 */
+.change-timeline__add {
+  color: #389e0d;
+  font-weight: 500;
+}
+
+/* 删除内容：红色删除线 */
+.change-timeline__del {
+  color: #ff4d4f;
+  text-decoration: line-through;
+}
+
+.change-timeline__arrow {
+  color: #8c8c8c;
+  margin: 0 4px;
+}

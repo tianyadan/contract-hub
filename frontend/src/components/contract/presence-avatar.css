@@ -1,0 +1,29 @@
+/* 在线状态头像样式 */
+
+.presence-avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 状态圆点 */
+.presence-avatar__dot {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+}
+
+/* 在线：绿色 */
+.presence-avatar__dot--online {
+  background: #52c41a;
+}
+
+/* 离线：灰色 */
+.presence-avatar__dot--offline {
+  background: #d9d9d9;
+}

@@ -1,0 +1,22 @@
+/* 登录 / 注册表单统一样式 */
+
+.auth-form {
+  max-width: 380px;
+  margin: 0 auto;
+}
+
+/* “记住我 + 忘记密码”行 */
+.auth-form__options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+/* 提交按钮：加一点圆角与高度，观感更清爽 */
+.auth-form__submit {
+  height: 44px;
+  font-size: 16px;
+  letter-spacing: 6px;
+  border-radius: 8px;
+}

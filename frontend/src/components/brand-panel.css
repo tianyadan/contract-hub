@@ -1,0 +1,147 @@
+/* 左侧品牌宣传面板样式：清新绿渐变 + 白色文字 */
+
+.brand-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex: 1 1 56%;
+  min-width: 420px;
+  min-height: 100vh;
+  overflow: hidden;
+  padding: 56px 64px;
+  /* 清新绿色渐变，呼应“心智协同” */
+  background: linear-gradient(155deg, #14c98f 0%, #00b96b 45%, #00915a 100%);
+  color: #ffffff;
+}
+
+/* 城市天际线铺底：沉在内容下层 */
+.brand-panel .city-skyline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* 顶部品牌标识区 */
+.brand-panel__header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.brand-panel__name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.brand-panel__title {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 4px;
+}
+
+.brand-panel__pinyin {
+  font-size: 12px;
+  letter-spacing: 3px;
+  opacity: 0.85;
+}
+
+/* 中部标语与能力区 */
+.brand-panel__body {
+  position: relative;
+  margin: auto 0;
+}
+
+.brand-panel__slogan {
+  margin: 0 0 12px;
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  color: #ffffff;
+}
+
+.brand-panel__subtitle {
+  margin: 0 0 44px;
+  font-size: 16px;
+  letter-spacing: 1px;
+  opacity: 0.92;
+}
+
+.brand-panel__features {
+  display: flex;
+  gap: 40px;
+}
+
+/* 能力条目 */
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.feature-item__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 22px;
+  color: #ffffff;
+}
+
+.feature-item__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.feature-item__title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.feature-item__desc {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+/* 底部公司名称 */
+.brand-panel__footer {
+  position: relative;
+  font-size: 13px;
+  letter-spacing: 1px;
+  opacity: 0.8;
+}
+
+/* 小屏适配：品牌区收窄 */
+@media (max-width: 960px) {
+  .brand-panel {
+    min-width: 0;
+    flex-basis: 42%;
+    padding: 40px 32px;
+  }
+
+  .brand-panel__slogan {
+    font-size: 26px;
+  }
+
+  .brand-panel__features {
+    flex-direction: column;
+    gap: 20px;
+  }
+}
+
+/* 超小屏：隐藏品牌区，只保留表单 */
+@media (max-width: 720px) {
+  .brand-panel {
+    display: none;
+  }
+}

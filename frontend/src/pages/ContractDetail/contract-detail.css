@@ -1,0 +1,86 @@
+/* 合同详情 / 在线编辑页样式 */
+
+.contract-detail__header {
+  margin-bottom: 16px;
+}
+
+/* 头部：左信息 + 右操作 */
+.contract-detail__header-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.contract-detail__title-block {
+  min-width: 0;
+}
+
+.contract-detail__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.contract-detail__header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+/* 在线用户头像 */
+.contract-detail__presence {
+  display: flex;
+  align-items: center;
+}
+
+/* 历史版本提示条 */
+.contract-detail__import-hint {
+  margin-bottom: 16px;
+}
+
+.contract-detail__source-collapse {
+  margin-top: 16px;
+}
+
+.contract-detail__version-alert {
+  margin-bottom: 16px;
+}
+
+/* 主体区 */
+.contract-detail__body {
+  align-items: flex-start;
+}
+
+.contract-detail__editor-card {
+  margin-bottom: 16px;
+}
+
+/* 底部修改说明条 */
+.contract-detail__save-bar {
+  margin-top: 16px;
+}
+
+.contract-detail__confirmation-item {
+  padding: 6px 0;
+}
+
+.contract-detail__export-preview {
+  max-height: 70vh;
+  overflow: auto;
+  margin: -8px -12px 0;
+  background: #eceff2;
+}
+
+.contract-detail__export-preview .doc-editor {
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.contract-detail__not-found {
+  text-align: center;
+  padding: 60px 0;
+}

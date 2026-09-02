@@ -1,0 +1,39 @@
+/* DOCX 高保真预览容器样式 */
+
+.docx-preview {
+  position: relative;
+  width: 100%;
+  min-height: 200px;
+}
+
+.docx-preview--empty {
+  padding: 24px;
+}
+
+.docx-preview__loading {
+  display: flex;
+  justify-content: center;
+  padding: 48px 0;
+}
+
+.docx-preview__error {
+  margin-bottom: 12px;
+}
+
+.docx-preview__container {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0;
+  background: #eceff2;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.docx-preview__container .docx-preview-wrapper {
+  background: #ffffff;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+}
+
+.docx-preview__container .docx-preview-wrapper > section.docx {
+  margin: 0 auto;
+}

@@ -1,0 +1,296 @@
+/* 文档在线编辑器样式：分页纸面渲染 + 普通流式降级 */
+
+.doc-editor {
+  position: relative;
+  min-height: 400px;
+  padding: 32px 40px;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+/* 分页纸面模式：灰底衬托白色纸张 */
+.doc-editor--paper {
+  padding: 32px 24px;
+  background: #eceff2;
+}
+
+/* 旧数据兼容提示 */
+.doc-editor__legacy-alert {
+  margin-bottom: 16px;
+}
+
+.doc-editor--empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+/* ---------- 测量容器（隐藏，仅用于计算高度） ---------- */
+.doc-editor__measure {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ---------- 可见页面 ---------- */
+.doc-editor__pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.doc-editor__pages-loading {
+  padding: 40px;
+  color: #8c8c8c;
+}
+
+.contract-export-watermark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 72px;
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.08);
+  pointer-events: none;
+  user-select: none;
+  z-index: 5;
+}
+
+.doc-page {
+  position: relative;
+  box-sizing: border-box;
+  background: #ffffff;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.14);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* 页眉（上边距区） */
+.doc-page__header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 3px 0;
+  text-align: center;
+  font-size: 9px;
+  color: #999999;
+  pointer-events: none;
+}
+
+/* 文档自带页脚文案 */
+.doc-page__footer-text {
+  position: absolute;
+  bottom: 28px;
+  left: 0;
+  right: 0;
+  padding: 0 12px;
+  text-align: center;
+  font-size: 9px;
+  color: #999999;
+  pointer-events: none;
+}
+
+/* 纸内页码（进入 PNG） */
+.doc-page__page-number {
+  position: absolute;
+  bottom: 8px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.2;
+  color: #333333;
+  pointer-events: none;
+  user-select: none;
+}
+
+.doc-page__body {
+  box-sizing: border-box;
+  position: relative;
+}
+
+/* ---------- 翻页条（纸外，不进 PNG） ---------- */
+.doc-editor__page-nav {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 16px;
+  min-height: 44px;
+  user-select: none;
+}
+
+.doc-editor__page-nav .ant-btn {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.doc-editor__page-nav-text {
+  min-width: 72px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+}
+
+.doc-editor__page-hint {
+  margin-bottom: 16px;
+  max-width: 760px;
+}
+
+/* 离屏全页宿主：供按页导出 PNG */
+.doc-editor__export-host {
+  position: absolute;
+  left: -99999px;
+  top: 0;
+  width: max-content;
+  pointer-events: none;
+  opacity: 1;
+}
+
+.doc-editor__export-host .doc-page {
+  margin-bottom: 16px;
+}
+
+/* 正文区：连续编辑模式下高度随内容增长（兼容旧类名） */
+.doc-page__body--continuous {
+  height: auto;
+  overflow: visible;
+}
+
+.doc-page--continuous {
+  height: auto;
+}
+
+/* ---------- 内容块 ---------- */
+.doc-editor__block {
+  position: relative;
+}
+
+/* 文档顶部固定格式工具栏 */
+.doc-editor__fixed-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+  max-width: min(760px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* 浮动格式工具栏：贴近当前光标 / 选区，避免占用文档顶部空间 */
+.doc-editor__floating-toolbar {
+  position: fixed;
+  z-index: 1000;
+  transform: translate(-50%, -100%);
+  max-width: min(760px, calc(100vw - 32px));
+}
+
+.doc-editor__block-delete {
+  display: none;
+}
+
+.doc-editor--paper .doc-page {
+  flex-shrink: 0;
+}
+
+.doc-editor--paper .doc-page__body {
+  overflow: hidden;
+}
+
+/* 分页模式下正文区固定高度，禁止撑长纸张 */
+.doc-editor--paper .doc-editor__unified {
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+/* 统一编辑区：整篇文档共用一个 contentEditable，支持 Ctrl+A 全选与自由回车 */
+.doc-editor__unified {
+  box-sizing: border-box;
+  min-height: 240px;
+  outline: none;
+  cursor: text;
+  word-break: break-word;
+}
+
+.doc-editor__unified--readonly {
+  min-height: auto;
+}
+
+.doc-editor__table-wrap {
+  margin: 4px 0;
+}
+
+.doc-editor__empty-hint {
+  margin-top: 16px;
+}
+
+/* 段落 / 标题：字体样式由行内样式提供，统一编辑区内作为块级子节点 */
+.doc-editor__paragraph,
+.doc-editor__heading,
+.doc-editor__formula {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 1.4em;
+  padding: 0;
+  border-radius: 2px;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  tab-size: 4;
+}
+
+/* 公式条目 */
+.doc-editor__formula-item {
+  font-size: 12px;
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.06);
+  border-radius: 4px;
+  padding: 2px 8px;
+  margin-top: 4px;
+  font-style: normal;
+}
+
+/* 表格 */
+.doc-editor__table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.doc-editor__table td {
+  border: 1px solid #8c8c8c;
+  padding: 4px 8px;
+  outline: none;
+  cursor: text;
+  word-break: break-word;
+}
+
+.doc-editor__table td:focus {
+  background: rgba(0, 185, 107, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(0, 185, 107, 0.35);
+}
+
+/* 底部工具栏 */
+.doc-editor__toolbar {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.doc-editor--paper .doc-editor__toolbar {
+  max-width: 760px;
+}

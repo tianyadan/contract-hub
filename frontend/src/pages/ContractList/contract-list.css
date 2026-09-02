@@ -1,0 +1,60 @@
+/* 合同管理列表页样式 */
+
+.contract-list__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.contract-list__title {
+  margin: 0 0 2px;
+  font-size: 22px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.contract-list__subtitle {
+  font-size: 13px;
+  color: #8c8c8c;
+}
+
+.contract-list__search {
+  margin-bottom: 16px;
+}
+
+.contract-list__search .ant-form-item {
+  margin-bottom: 0;
+}
+
+.contract-list__table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.contract-list__selection-info {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.contract-list__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.contract-list__name a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.contract-list__no {
+  font-size: 13px;
+  color: #8c8c8c;
+}
