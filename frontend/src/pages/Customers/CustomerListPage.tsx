@@ -6,6 +6,7 @@ import { PlusOutlined, TeamOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { createCustomer, getCustomerList } from '../../api/customerApi'
 import type { Customer } from '../../types/customer'
+import { normalizePhoneDigits, phoneFormRules } from '../../utils/phone'
 import './customer-list.css'
 
 /**
@@ -39,12 +40,15 @@ export default function CustomerListPage() {
     loadList()
   }, [loadList])
 
-  /** 新建客户并跳转详情 */
+  /** 新建客户并跳转详情（手机号归一化为 11 位数字） */
   const handleCreate = async () => {
     const values = await form.validateFields()
     setSubmitting(true)
     try {
-      const customer = await createCustomer(values)
+      const customer = await createCustomer({
+        ...values,
+        phone: normalizePhoneDigits(values.phone),
+      })
       message.success('客户创建成功')
       setCreateOpen(false)
       form.resetFields()
@@ -133,9 +137,10 @@ export default function CustomerListPage() {
           <Form.Item
             name="phone"
             label="联系电话"
-            rules={[{ required: true, message: '请输入联系电话' }]}
+            rules={phoneFormRules}
+            extra="须为 11 位大陆手机号，用于合同分享身份校验"
           >
-            <Input maxLength={32} />
+            <Input placeholder="例如 13800138000" maxLength={20} inputMode="numeric" />
           </Form.Item>
           <Form.Item name="address" label="联系地址">
             <Input maxLength={500} />

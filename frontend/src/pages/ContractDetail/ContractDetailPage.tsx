@@ -60,6 +60,7 @@ import { useCollaboration } from '../../hooks/useCollaboration'
 import { isContractLocked, normalizeDocumentContent, prepareSaveDocumentContent } from '../../utils/documentContent'
 import { hasUserConfirmedVersion, willFinalizeAfterConfirm } from '../../utils/confirmProgress'
 import { getStoredUser } from '../../utils/token'
+import { isValidCnMobile } from '../../utils/phone'
 import {
   collectExportPageElements,
   exportPagesAsPng,
@@ -196,7 +197,7 @@ export default function ContractDetailPage() {
   }, [documentContent, originalSnapshot])
 
   const hasShareGateInfo = Boolean(
-    detail?.customer_name?.trim() && detail?.customer_phone?.replace(/\D/g, '').length === 11,
+    detail?.customer_name?.trim() && isValidCnMobile(detail?.customer_phone ?? ''),
   )
 
   /** 对方保存后刷新正文并保留当前页码 */

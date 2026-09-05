@@ -9,6 +9,7 @@ import {
 import type { UploadFile } from 'antd'
 import { InboxOutlined } from '@ant-design/icons'
 import { createContract } from '../../api/contractApi'
+import { normalizePhoneDigits, phoneFormRules } from '../../utils/phone'
 
 /** 导入合同表单字段 */
 interface ImportFormValues {
@@ -83,7 +84,7 @@ export default function ContractImportModal({
       formData.append('contract_name', values.contract_name)
       formData.append('customer_name', values.customer_name)
       if (values.customer_contact) formData.append('customer_contact', values.customer_contact)
-      formData.append('customer_phone', values.customer_phone.replace(/\D/g, ''))
+      formData.append('customer_phone', normalizePhoneDigits(values.customer_phone))
       if (values.description) formData.append('description', values.description)
       formData.append('file', fileList[0].originFileObj as File)
 
@@ -143,15 +144,10 @@ export default function ContractImportModal({
         <Form.Item
           name="customer_phone"
           label="客户联系电话"
-          rules={[
-            { required: true, message: '请输入客户联系电话' },
-            {
-              pattern: /^1\d{10}$/,
-              message: '请输入正确的 11 位手机号',
-            },
-          ]}
+          rules={phoneFormRules}
+          extra="须为 11 位大陆手机号，用于合同分享身份校验"
         >
-          <Input placeholder="请输入客户联系电话（分享门禁校验用）" maxLength={20} />
+          <Input placeholder="例如 13800138000" maxLength={20} inputMode="numeric" />
         </Form.Item>
 
         {/* 合同备注（选填） */}

@@ -28,6 +28,7 @@ import type { Customer } from '../../types/customer'
 import type { ContractListItem } from '../../types/contract'
 import type { TemplateListItem } from '../../types/template'
 import ContractStatusTag from '../../components/ContractStatusTag'
+import { isValidCnMobile, normalizePhoneDigits, phoneFormRules } from '../../utils/phone'
 import './customer-detail.css'
 
 /**
@@ -70,8 +71,12 @@ export default function CustomerDetailPage() {
     loadData()
   }, [loadData])
 
-  /** 打开添加合同弹窗时加载模板列表 */
+  /** 打开添加合同弹窗时加载模板列表，并校验客户手机号可用于分享 */
   const openAddContract = async () => {
+    if (!customer?.phone || !isValidCnMobile(customer.phone)) {
+      message.warning('当前客户手机号不是 11 位大陆手机号，请先编辑客户资料后再创建合同，否则无法分享')
+      return
+    }
     const res = await getTemplateList({ page: 1, page_size: 100 })
     if (res.list.length === 0) {
       message.warning('请先在模板池上传合同模板')
@@ -91,10 +96,13 @@ export default function CustomerDetailPage() {
     navigate(`/contracts/${result.contract_id}`)
   }
 
-  /** 保存客户信息 */
+  /** 保存客户信息（手机号归一化为 11 位数字） */
   const handleUpdateCustomer = async () => {
     const values = await form.validateFields()
-    const updated = await updateCustomer(customerId, values)
+    const updated = await updateCustomer(customerId, {
+      ...values,
+      phone: normalizePhoneDigits(values.phone),
+    })
     setCustomer(updated)
     setEditOpen(false)
     message.success('客户信息已更新')
@@ -188,8 +196,13 @@ export default function CustomerDetailPage() {
           <Form.Item name="customer_name" label="客户名称" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="phone" label="联系电话" rules={[{ required: true }]}>
-            <Input />
+          <Form.Item
+            name="phone"
+            label="联系电话"
+            rules={phoneFormRules}
+            extra="须为 11 位大陆手机号，用于合同分享身份校验"
+          >
+            <Input placeholder="例如 13800138000" maxLength={20} inputMode="numeric" />
           </Form.Item>
           <Form.Item name="address" label="联系地址">
             <Input />
