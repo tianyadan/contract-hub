@@ -31,6 +31,8 @@ var (
 	ErrContractLocked       = errors.New("合同已确认锁定，无法继续编辑")
 	ErrDocParseFailed       = errors.New("文档解析失败，请检查 DOCX 内容")
 	ErrVersionNotFound      = errors.New("版本不存在")
+	ErrVersionConflict      = errors.New("文档版本冲突，请选择冲突区域保留内容")
+	ErrVersionRace          = errors.New("保存时版本已被他人更新，请重试")
 )
 
 // MaxUploadFileSize 限制上传文件最大 20MB。
@@ -360,6 +362,8 @@ type SaveVersionInput struct {
 	ChangeSummary   string
 	ClientIP        string
 	UserAgent       string
+	// BaseVersionID 客户端加载时的当前版本 ID；用于乐观锁与三方合并。
+	BaseVersionID int64
 }
 
 // SaveVersionResult 保存新版本返回结果。
@@ -369,9 +373,32 @@ type SaveVersionResult struct {
 	VersionNo   int       `json:"version_no"`
 	ChangeCount int       `json:"change_count"`
 	CreateTime  time.Time `json:"create_time"`
+	AutoMerged  bool      `json:"auto_merged,omitempty"`
 }
 
-// SaveVersion 保存新版本：写入网页编辑快照并生成块级/样式 diff 变更记录。
+// VersionConflictPayload 版本冲突详情（HTTP 409 / code 40901）。
+type VersionConflictPayload struct {
+	CurrentVersionID int64                         `json:"current_version_id"`
+	CurrentVersionNo int                           `json:"current_version_no"`
+	BaseVersionID    int64                         `json:"base_version_id"`
+	MergedDocument   map[string]interface{}        `json:"merged_document"`
+	Conflicts        []documentdiff.BlockConflict  `json:"conflicts"`
+}
+
+// VersionConflictError 带冲突载荷的业务错误。
+type VersionConflictError struct {
+	Payload VersionConflictPayload
+}
+
+func (e *VersionConflictError) Error() string {
+	return ErrVersionConflict.Error()
+}
+
+func (e *VersionConflictError) Unwrap() error {
+	return ErrVersionConflict
+}
+
+// SaveVersion 保存新版本：乐观锁 + 块级三方合并（无冲突自动合并，有冲突返回 409）。
 func (s *ContractService) SaveVersion(ctx context.Context, input SaveVersionInput) (*SaveVersionResult, error) {
 	detail, err := s.contracts.GetDetailByOwner(ctx, input.ContractID, input.UserID)
 	if err != nil {
@@ -384,80 +411,210 @@ func (s *ContractService) SaveVersion(ctx context.Context, input SaveVersionInpu
 		return nil, ErrContractLocked
 	}
 
-	now := time.Now()
-	fromVersionID := int64(0)
+	normalizeWebCanvasDocument(input.DocumentContent)
+	normalizeDocumentSeals(input.DocumentContent, input.ContractID)
+
+	currentVersionID := int64(0)
+	currentVersionNo := detail.Contract.CurrentVersionNo
 	oldDocJSON := ""
 	if detail.Version != nil {
-		fromVersionID = detail.Version.ID
+		currentVersionID = detail.Version.ID
 		oldDocJSON = detail.Version.DocumentContent
 	}
 
-	normalizeWebCanvasDocument(input.DocumentContent)
+	docToSave := input.DocumentContent
+	autoMerged := false
+	baseID := input.BaseVersionID
 
-	diffRecords, err := documentdiff.CompareJSON(oldDocJSON, input.DocumentContent)
+	// 客户端声明了基础版本且与服务端当前不一致 → 三方合并
+	if baseID > 0 && currentVersionID > 0 && baseID != currentVersionID {
+		merged, conflictErr := s.buildVersionConflictOrMerge(
+			ctx, input.ContractID, baseID, currentVersionID, currentVersionNo, input.DocumentContent, oldDocJSON,
+		)
+		if conflictErr != nil {
+			return nil, conflictErr
+		}
+		docToSave = merged
+		autoMerged = true
+		normalizeWebCanvasDocument(docToSave)
+		normalizeDocumentSeals(docToSave, input.ContractID)
+	} else if baseID == 0 && currentVersionID > 0 {
+		// 兼容旧客户端：不强制 base，但仍 CAS 到当前版本
+		baseID = currentVersionID
+	}
+	normalizeDocumentSeals(docToSave, input.ContractID)
+
+	return s.persistNewVersion(
+		ctx,
+		persistVersionParams{
+			ContractID:           input.ContractID,
+			UserID:               input.UserID,
+			CollaboratorID:       nil,
+			OperatorName:         input.Username,
+			DocumentContent:      docToSave,
+			OldDocJSON:           oldDocJSON,
+			ExpectedCurrentID:    currentVersionID,
+			CurrentVersionNo:     currentVersionNo,
+			SourceVersionID:      baseID,
+			ChangeSummary:        input.ChangeSummary,
+			ClientIP:             input.ClientIP,
+			UserAgent:            input.UserAgent,
+			PreviousVersion:      detail.Version,
+			SavedByRole:          "owner",
+			AutoMerged:           autoMerged,
+		},
+	)
+}
+
+// buildVersionConflictOrMerge 加载 base，与 ours/theirs 合并；有冲突则返回 VersionConflictError。
+func (s *ContractService) buildVersionConflictOrMerge(
+	ctx context.Context,
+	contractID, baseVersionID, currentVersionID int64,
+	currentVersionNo int,
+	oursDoc map[string]interface{},
+	theirsJSON string,
+) (map[string]interface{}, error) {
+	baseVersion, err := s.contracts.GetVersionByID(ctx, contractID, baseVersionID)
+	if err != nil {
+		return nil, err
+	}
+	if baseVersion == nil {
+		return nil, ErrVersionNotFound
+	}
+
+	var baseRaw map[string]interface{}
+	if strings.TrimSpace(baseVersion.DocumentContent) != "" {
+		if err := json.Unmarshal([]byte(baseVersion.DocumentContent), &baseRaw); err != nil {
+			return nil, fmt.Errorf("parse base document: %w", err)
+		}
+	}
+	var theirsRaw map[string]interface{}
+	if strings.TrimSpace(theirsJSON) != "" {
+		if err := json.Unmarshal([]byte(theirsJSON), &theirsRaw); err != nil {
+			return nil, fmt.Errorf("parse server document: %w", err)
+		}
+	}
+
+	mergeResult, err := documentdiff.ThreeWayMergeMaps(baseRaw, oursDoc, theirsRaw)
+	if err != nil {
+		return nil, fmt.Errorf("three-way merge: %w", err)
+	}
+	if len(mergeResult.Conflicts) > 0 {
+		return nil, &VersionConflictError{
+			Payload: VersionConflictPayload{
+				CurrentVersionID: currentVersionID,
+				CurrentVersionNo: currentVersionNo,
+				BaseVersionID:    baseVersionID,
+				MergedDocument:   mergeResult.Merged,
+				Conflicts:        mergeResult.Conflicts,
+			},
+		}
+	}
+	return mergeResult.Merged, nil
+}
+
+type persistVersionParams struct {
+	ContractID        int64
+	UserID            int64
+	CollaboratorID    *int64
+	OperatorName      string
+	DocumentContent   map[string]interface{}
+	OldDocJSON        string
+	ExpectedCurrentID int64
+	CurrentVersionNo  int
+	SourceVersionID   int64
+	ChangeSummary     string
+	ClientIP          string
+	UserAgent         string
+	PreviousVersion   *model.ContractVersion
+	SavedByRole       string
+	AutoMerged        bool
+}
+
+// persistNewVersion 写入新版本（含 CAS）。
+func (s *ContractService) persistNewVersion(ctx context.Context, p persistVersionParams) (*SaveVersionResult, error) {
+	now := time.Now()
+	fromVersionID := p.ExpectedCurrentID
+
+	diffRecords, err := documentdiff.CompareJSON(p.OldDocJSON, p.DocumentContent)
 	if err != nil {
 		return nil, fmt.Errorf("compare document versions: %w", err)
 	}
 
-	newVersionNo := detail.Contract.CurrentVersionNo + 1
+	newVersionNo := p.CurrentVersionNo + 1
 	newVersionID := nextID()
-	newDocJSON, err := json.Marshal(input.DocumentContent)
+	newDocJSON, err := json.Marshal(p.DocumentContent)
 	if err != nil {
 		return nil, err
 	}
 
+	var sourceID *int64
+	if p.SourceVersionID > 0 {
+		id := p.SourceVersionID
+		sourceID = &id
+	}
+
 	version := &model.ContractVersion{
 		ID:              newVersionID,
-		ContractID:      input.ContractID,
+		ContractID:      p.ContractID,
 		VersionNo:       newVersionNo,
-		CreatedBy:       input.UserID,
+		CreatedBy:       p.UserID,
+		CollaboratorID:  p.CollaboratorID,
+		SourceVersionID: sourceID,
 		DocumentContent: string(newDocJSON),
-		ChangeSummary:   strings.TrimSpace(input.ChangeSummary),
+		ChangeSummary:   strings.TrimSpace(p.ChangeSummary),
 		CreateTime:      now,
 	}
-	// 新版本继承上一版的 DOCX 归档信息，供「导入原文件参考」预览使用。
-	inheritVersionFileMeta(version, detail.Version)
+	inheritVersionFileMeta(version, p.PreviousVersion)
+
+	operatorName := strings.TrimSpace(p.OperatorName)
+	if operatorName == "" {
+		operatorName = "用户"
+	}
 
 	audit := &model.ContractAuditLog{
-		ID:            nextID(),
-		ContractID:    input.ContractID,
-		UserID:        input.UserID,
-		OperatorName:  input.Username,
-		OperationType: "CREATE_VERSION",
-		OperationDesc: fmt.Sprintf("创建合同版本 V%d", newVersionNo),
-		VersionID:     newVersionID,
-		IPAddress:     input.ClientIP,
-		UserAgent:     input.UserAgent,
-		CreateTime:    now,
+		ID:             nextID(),
+		ContractID:     p.ContractID,
+		UserID:         p.UserID,
+		CollaboratorID: p.CollaboratorID,
+		OperatorName:   operatorName,
+		OperationType:  "CREATE_VERSION",
+		OperationDesc:  fmt.Sprintf("创建合同版本 V%d", newVersionNo),
+		VersionID:      newVersionID,
+		IPAddress:      p.ClientIP,
+		UserAgent:      p.UserAgent,
+		CreateTime:     now,
 	}
 
 	changes := buildContractChangesFromDiff(
-		input.ContractID, fromVersionID, newVersionID, input.UserID, nil, diffRecords, now,
+		p.ContractID, fromVersionID, newVersionID, p.UserID, p.CollaboratorID, diffRecords, now,
 	)
 
-	if err := s.contracts.CreateVersionWithChanges(ctx, input.ContractID, version, changes, audit); err != nil {
+	if err := s.contracts.CreateVersionWithChanges(
+		ctx, p.ContractID, version, changes, audit, p.ExpectedCurrentID,
+	); err != nil {
+		if errors.Is(err, repository.ErrVersionCASFailed) {
+			return nil, ErrVersionRace
+		}
 		return nil, err
 	}
 
 	if s.broadcaster != nil {
-		savedBy := strings.TrimSpace(input.Username)
-		if savedBy == "" {
-			savedBy = "内部用户"
-		}
-		s.broadcaster.BroadcastVersionSaved(input.ContractID, collab.VersionSavedPayload{
+		s.broadcaster.BroadcastVersionSaved(p.ContractID, collab.VersionSavedPayload{
 			VersionID:   newVersionID,
 			VersionNo:   newVersionNo,
-			SavedBy:     savedBy,
-			SavedByRole: "owner",
+			SavedBy:     operatorName,
+			SavedByRole: p.SavedByRole,
 		})
 	}
 
 	return &SaveVersionResult{
-		ContractID:  input.ContractID,
+		ContractID:  p.ContractID,
 		VersionID:   newVersionID,
 		VersionNo:   newVersionNo,
 		ChangeCount: len(changes),
 		CreateTime:  now,
+		AutoMerged:  p.AutoMerged,
 	}, nil
 }
 
@@ -468,6 +625,122 @@ func normalizeWebCanvasDocument(doc map[string]interface{}) {
 	}
 	doc["schema_version"] = 3
 	doc["render_mode"] = "web_canvas"
+}
+
+// stripDocumentSeals 移除文档中的电子章配置（确认锁定后清理；协作期保留）。
+func stripDocumentSeals(doc map[string]interface{}) {
+	if doc == nil {
+		return
+	}
+	delete(doc, "seals")
+}
+
+// normalizeDocumentSeals 持久化前清洗 seals：仅保留合同级 oss_key，去掉 token/blob 直链。
+func normalizeDocumentSeals(doc map[string]interface{}, contractID int64) {
+	if doc == nil {
+		return
+	}
+	raw, ok := doc["seals"]
+	if !ok || raw == nil {
+		return
+	}
+	list, ok := raw.([]interface{})
+	if !ok {
+		delete(doc, "seals")
+		return
+	}
+	prefix := contractSealKeyPrefix(contractID)
+	out := make([]interface{}, 0, len(list))
+	for _, item := range list {
+		m, ok := item.(map[string]interface{})
+		if !ok || m == nil {
+			continue
+		}
+		ossKey, _ := m["oss_key"].(string)
+		ossKey = strings.TrimSpace(ossKey)
+		if ossKey == "" || !strings.HasPrefix(ossKey, prefix) {
+			continue
+		}
+		if err := validateContractSealKey(contractID, ossKey); err != nil {
+			continue
+		}
+		cleaned := map[string]interface{}{
+			"id":         stringifySealField(m["id"]),
+			"oss_key":    ossKey,
+			"page_index": toIntSeal(m["page_index"]),
+			"x_ratio":    toFloatSeal(m["x_ratio"], 0.5),
+			"y_ratio":    toFloatSeal(m["y_ratio"], 0.5),
+			"scale":      toFloatSeal(m["scale"], 1),
+			"image_url":  "", // 展示时由前后端按 oss_key 拼代理地址
+		}
+		if id := cleaned["id"].(string); id == "" {
+			cleaned["id"] = fmt.Sprintf("seal-%d", time.Now().UnixNano())
+		}
+		if v, ok := m["rotate"]; ok {
+			cleaned["rotate"] = v
+		}
+		if v, ok := m["placed_by"].(string); ok && v != "" {
+			cleaned["placed_by"] = v
+		}
+		if v, ok := m["placed_at"].(string); ok && v != "" {
+			cleaned["placed_at"] = v
+		}
+		out = append(out, cleaned)
+	}
+	if len(out) == 0 {
+		delete(doc, "seals")
+		return
+	}
+	doc["seals"] = out
+}
+
+func stringifySealField(v interface{}) string {
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t)
+	case float64:
+		return fmt.Sprintf("%.0f", t)
+	default:
+		return ""
+	}
+}
+
+func toIntSeal(v interface{}) int {
+	switch t := v.(type) {
+	case float64:
+		return int(t)
+	case int:
+		return t
+	case int64:
+		return int(t)
+	case json.Number:
+		i, _ := t.Int64()
+		return int(i)
+	default:
+		return 0
+	}
+}
+
+func toFloatSeal(v interface{}, fallback float64) float64 {
+	switch t := v.(type) {
+	case float64:
+		return t
+	case int:
+		return float64(t)
+	case int64:
+		return float64(t)
+	case json.Number:
+		f, err := t.Float64()
+		if err == nil {
+			return f
+		}
+	}
+	return fallback
+}
+
+// StripSealsFromContractVersions 确认锁定后清除各版本 document_content.seals，防章泄露。
+func (s *ContractService) StripSealsFromContractVersions(ctx context.Context, contractID int64) error {
+	return s.contracts.StripSealsFromAllVersions(ctx, contractID)
 }
 
 // VersionListItem 版本列表返回项。

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net/http"
@@ -116,17 +117,35 @@ func (h *CustomerHandler) Update(c *gin.Context) {
 	response.Success(c, http.StatusOK, "更新成功", result)
 }
 
-// Delete 删除客户。
+// Delete 删除客户（级联删除名下全部合同）。
 func (h *CustomerHandler) Delete(c *gin.Context) {
 	id, err := parseIDParam(c, "id")
 	if err != nil {
 		return
 	}
-	if err := h.customers.Delete(c.Request.Context(), id, middleware.GetUserID(c)); err != nil {
+	userID := middleware.GetUserID(c)
+	username := middleware.GetUsername(c)
+	result, err := h.customers.Delete(c.Request.Context(), service.DeleteCustomerInput{
+		CustomerID: id,
+		UserID:     userID,
+		Username:   username,
+		ClientIP:   c.ClientIP(),
+		UserAgent:  c.Request.UserAgent(),
+		DeleteContracts: func(ctx context.Context, contractIDs []int64) error {
+			return h.contracts.BatchDelete(ctx, service.BatchDeleteContractsInput{
+				ContractIDs: contractIDs,
+				UserID:      userID,
+				Username:    username,
+				ClientIP:    c.ClientIP(),
+				UserAgent:   c.Request.UserAgent(),
+			})
+		},
+	})
+	if err != nil {
 		writeCustomerError(c, err)
 		return
 	}
-	response.Success(c, http.StatusOK, "删除成功", nil)
+	response.Success(c, http.StatusOK, "删除成功", result)
 }
 
 // ListContracts 客户下合同列表。
@@ -198,10 +217,9 @@ func writeCustomerError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrInvalidContractInput):
 		response.Error(c, http.StatusBadRequest, 40001, err.Error())
-	case errors.Is(err, service.ErrCustomerNotFound):
+	case errors.Is(err, service.ErrCustomerNotFound),
+		errors.Is(err, service.ErrContractNotFound):
 		response.Error(c, http.StatusNotFound, 40401, err.Error())
-	case errors.Is(err, service.ErrCustomerHasContracts):
-		response.Error(c, http.StatusConflict, 40901, err.Error())
 	default:
 		log.Printf("customer error: %v", err)
 		response.Error(c, http.StatusInternalServerError, 50000, "服务器内部错误")

@@ -99,6 +99,7 @@ export function saveContractVersion(
     url: `/contracts/${id}/versions`,
     method: 'post',
     data,
+    skipErrorToast: true,
   })
 }
 
@@ -149,6 +150,21 @@ export function getContractChanges(
     url: `/contracts/${id}/changes`,
     method: 'get',
     params,
+  })
+}
+
+/** 上传合同级电子章图片，返回 oss_key（写入 document_content.seals） */
+export function uploadContractSeal(
+  contractId: number,
+  file: File,
+): Promise<{ oss_key: string; mime_type: string }> {
+  const form = new FormData()
+  form.append('file', file)
+  return requestTyped<{ oss_key: string; mime_type: string }>({
+    url: `/contracts/${contractId}/seals/upload`,
+    method: 'post',
+    data: form,
+    headers: { 'Content-Type': 'multipart/form-data' },
   })
 }
 

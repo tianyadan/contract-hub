@@ -331,3 +331,19 @@ CREATE TABLE contract_audit_log (
     KEY idx_create_time (create_time)
 
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='合同操作审计日志表';
+-- ============================================================
+-- 用户导出水印设置（V3.7）
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS user_watermark_setting (
+  user_id     BIGINT       NOT NULL COMMENT '用户 ID',
+  enabled     TINYINT      NOT NULL DEFAULT 0 COMMENT '是否启用：0 关 1 开',
+  content     VARCHAR(64)  NOT NULL DEFAULT '' COMMENT '水印文案',
+  density     TINYINT      NOT NULL DEFAULT 5  COMMENT '密度 1-10',
+  font_size   TINYINT      NOT NULL DEFAULT 22 COMMENT '字号 px 12-48',
+  rotate      SMALLINT     NOT NULL DEFAULT -28 COMMENT '倾斜角度 -60~0',
+  opacity     TINYINT      NOT NULL DEFAULT 18 COMMENT '透明度百分比 5-40',
+  create_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  update_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户导出水印设置';

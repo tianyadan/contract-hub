@@ -28,8 +28,10 @@ export async function updateCustomer(id: number, data: CreateCustomerParams): Pr
   return requestTyped({ url: `/customers/${id}`, method: 'PUT', data })
 }
 
-/** 删除客户 */
-export async function deleteCustomer(id: number): Promise<void> {
+/** 删除客户（级联删除名下合同） */
+export async function deleteCustomer(
+  id: number,
+): Promise<{ deleted_contract_count: number }> {
   return requestTyped({ url: `/customers/${id}`, method: 'DELETE' })
 }
 

@@ -11,3 +11,26 @@
   margin-bottom: 16px;
   flex-wrap: wrap;
 }
+
+.customer-detail__name {
+  margin: 0 !important;
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .customer-detail--mobile .customer-detail__header {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .customer-detail--mobile .customer-detail__name {
+    font-size: 16px !important;
+    order: 3;
+    flex: 1 1 100%;
+  }
+
+  .customer-detail--mobile .ant-card-body {
+    padding: 12px;
+  }
+}

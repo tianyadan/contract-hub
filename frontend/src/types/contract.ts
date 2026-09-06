@@ -122,6 +122,14 @@ export interface DocumentBlock {
   runs?: DocumentRun[]
 }
 
+/** 页眉 / 页脚条目（支持样式：颜色、加粗等） */
+export interface DocumentChromeItem {
+  id: string
+  text: string
+  /** 整段样式；旧数据可能缺失 */
+  style?: BlockStyle
+}
+
 /** 结构化文档内容（保存新版本时的请求体结构） */
 export interface DocumentContent {
   /** 文档结构版本。3 表示网页画布为最终导出标准 */
@@ -135,11 +143,41 @@ export interface DocumentContent {
   /** 文档默认样式（Normal 样式兜底） */
   default_style?: BlockStyle
   /** 页眉 */
-  headers?: { id: string; text: string }[]
+  headers?: DocumentChromeItem[]
   /** 页脚 */
-  footers?: { id: string; text: string }[]
+  footers?: DocumentChromeItem[]
   /** 正文块列表 */
   blocks: DocumentBlock[]
+  /**
+   * 协作期电子章落章实例（合同级 oss_key，双方可见；确认锁定后由后端清除）。
+   */
+  seals?: DocumentSeal[]
+}
+
+/** 合同纸面上的一枚电子章（相对页坐标） */
+export interface DocumentSeal {
+  /** 实例 ID */
+  id: string
+  /** 合同级 OSS 对象键（双方可见的主字段） */
+  oss_key?: string
+  /** 章库资产 ID（仅内部章库引用；落章时应复制为 oss_key） */
+  asset_id?: number
+  /** 图片 URL（展示用；持久化可为空，由 oss_key 解析） */
+  image_url: string
+  /** 所在页 0-based */
+  page_index: number
+  /** 中心点 X：相对页宽 0～1 */
+  x_ratio: number
+  /** 中心点 Y：相对页高 0～1 */
+  y_ratio: number
+  /** 缩放，1 ≈ 页宽 22% */
+  scale: number
+  /** 旋转角度（可选） */
+  rotate?: number
+  /** 放置方 */
+  placed_by?: 'internal' | 'external'
+  /** 放置时间 */
+  placed_at?: string
 }
 
 /** 合同列表返回项 */
@@ -270,6 +308,8 @@ export interface SaveVersionParams {
   document_content: DocumentContent
   /** 本次修改说明 */
   change_summary: string
+  /** 客户端加载时的当前版本 ID（乐观锁 / 三方合并基准） */
+  base_version_id?: number
 }
 
 /** 保存新版本返回结果 */
@@ -279,6 +319,8 @@ export interface SaveVersionResult {
   version_no: number
   change_count: number
   create_time: string
+  /** 是否在服务端自动合并了非冲突变更 */
+  auto_merged?: boolean
 }
 
 /** 分享入口信息（加入前，不含合同名称/编号） */
@@ -368,6 +410,15 @@ export interface ShareContract {
   document_content: DocumentContent
   /** 当前协作者权限：0 只读 1 可编辑 */
   permission: number
+  /** 合同所有者导出水印（分享页展示与 PDF 叠加） */
+  watermark?: {
+    enabled: boolean
+    content: string
+    density: number
+    font_size: number
+    rotate: number
+    opacity: number
+  } | null
 }
 
 /** 外部协作者信息（CollaboratorVO） */

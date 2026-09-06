@@ -31,6 +31,15 @@ func Error(c *gin.Context, httpStatus int, code int, message string) {
 	})
 }
 
+// ErrorWithData 返回带业务数据的失败响应（如版本冲突详情）。
+func ErrorWithData(c *gin.Context, httpStatus int, code int, message string, data interface{}) {
+	c.JSON(httpStatus, Body{
+		Code:    code,
+		Message: message,
+		Data:    data,
+	})
+}
+
 // Health 接口常用的“无业务数据”成功响应。
 func OK(c *gin.Context) {
 	Success(c, http.StatusOK, "ok", nil)

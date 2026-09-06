@@ -156,6 +156,15 @@ func (r *CustomerRepository) CountActiveContracts(ctx context.Context, customerI
 	return total, err
 }
 
+// CountContracts 统计客户下全部合同数（含已取消）。
+func (r *CustomerRepository) CountContracts(ctx context.Context, customerID int64) (int64, error) {
+	var total int64
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM contract WHERE customer_id = ?
+	`, customerID).Scan(&total)
+	return total, err
+}
+
 func buildCustomerWhere(filter CustomerListFilter) (string, []interface{}) {
 	sb := strings.Builder{}
 	sb.WriteString("WHERE owner_user_id = ? AND status = 1")

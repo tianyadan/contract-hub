@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Key } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Card, Form, Input, Modal, Select, Space, Table } from 'antd'
+import {
+  Button,
+  Card,
+  Empty,
+  Form,
+  Input,
+  Modal,
+  Pagination,
+  Select,
+  Space,
+  Spin,
+  Table,
+} from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
   DeleteOutlined,
@@ -23,7 +35,9 @@ import ContractStatusTag from '../../components/ContractStatusTag'
 import DocxIcon from '../../components/DocxIcon'
 import ContractImportModal from '../../components/contract/ContractImportModal'
 import ContractShareModal from '../../components/contract/ContractShareModal'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { getMessageApi } from '../../utils/message'
+import '../../styles/mobile-list.css'
 import './contract-list.css'
 
 /** 列表查询表单字段 */
@@ -35,29 +49,26 @@ interface ListQueryValues {
 
 /**
  * 合同管理列表页。
- * 顶部搜索区 + 导入合同入口，中部为分页合同表格，操作列支持查看 / 分享。
+ * 顶部搜索区 + 导入合同入口；桌面 Table，手机卡片列表。
  */
 export default function ContractListPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [form] = Form.useForm<ListQueryValues>()
+  const isMobile = useIsMobile()
 
-  // 列表数据
   const [list, setList] = useState<ContractListItem[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([])
-  // 查询条件
   const [query, setQuery] = useState<{ page: number; page_size: number } & ListQueryValues>({
     page: 1,
     page_size: 10,
   })
-  // 弹窗状态
   const [importOpen, setImportOpen] = useState(false)
   const [shareTarget, setShareTarget] = useState<ContractListItem | null>(null)
 
-  // 首页统计卡片跳转带 status 参数时，初始化状态筛选
   useEffect(() => {
     const statusStr = searchParams.get('status')
     if (statusStr !== null && statusStr !== '') {
@@ -85,7 +96,6 @@ export default function ContractListPage() {
     }
   }, [query])
 
-  // 查询条件变化时重新拉取
   useEffect(() => {
     fetchList()
   }, [fetchList])
@@ -107,7 +117,7 @@ export default function ContractListPage() {
     setQuery((q) => ({ ...q, page, page_size: pageSize }))
   }
 
-  /** 删除成功后刷新当前页；当当前页清空时回退到上一页，避免出现空白页。 */
+  /** 删除成功后刷新当前页 */
   const refreshAfterDelete = (deletedCount: number) => {
     setSelectedRowKeys([])
     setQuery((q) => {
@@ -116,7 +126,7 @@ export default function ContractListPage() {
     })
   }
 
-  /** 单个删除合同。 */
+  /** 单个删除合同 */
   const handleDelete = (record: ContractListItem) => {
     Modal.confirm({
       title: '确认删除合同？',
@@ -137,7 +147,7 @@ export default function ContractListPage() {
     })
   }
 
-  /** 批量删除选中的合同。 */
+  /** 批量删除选中的合同 */
   const handleBatchDelete = () => {
     const selectedIDs = selectedRowKeys.map((key) => Number(key)).filter((id) => id > 0)
     if (selectedIDs.length === 0) {
@@ -164,7 +174,6 @@ export default function ContractListPage() {
     })
   }
 
-  /** 表格列配置 */
   const columns: ColumnsType<ContractListItem> = [
     {
       title: '合同名称',
@@ -253,39 +262,129 @@ export default function ContractListPage() {
     },
   ]
 
+  /** 手机端合同卡片列表 */
+  const renderMobileList = () => (
+    <Spin spinning={loading || deleting}>
+      {list.length === 0 && !loading ? (
+        <div className="mobile-card-list__empty">
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无合同" />
+        </div>
+      ) : (
+        <div className="mobile-card-list">
+          {list.map((item) => (
+            <div key={item.id} className="mobile-card-list__item">
+              <div className="mobile-card-list__head">
+                <DocxIcon size={22} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <Button
+                    type="link"
+                    className="mobile-card-list__title"
+                    onClick={() => navigate(`/contracts/${item.id}`)}
+                  >
+                    {item.contract_name}
+                  </Button>
+                  <div className="mobile-card-list__meta" style={{ marginTop: 4 }}>
+                    <ContractStatusTag status={item.status} />
+                    <span className="mobile-card-list__value">V{item.current_version_no}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="mobile-card-list__meta">
+                <div className="mobile-card-list__meta-row">
+                  <span className="mobile-card-list__label">客户</span>
+                  <span className="mobile-card-list__value">{item.customer_name || '-'}</span>
+                </div>
+                <div className="mobile-card-list__meta-row">
+                  <span className="mobile-card-list__label">编号</span>
+                  <span className="mobile-card-list__value">{item.contract_no}</span>
+                </div>
+                <div className="mobile-card-list__meta-row">
+                  <span className="mobile-card-list__label">更新</span>
+                  <span className="mobile-card-list__value">
+                    {dayjs(item.update_time).format('YYYY-MM-DD HH:mm')}
+                  </span>
+                </div>
+              </div>
+              <div className="mobile-card-list__actions">
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<EyeOutlined />}
+                  onClick={() => navigate(`/contracts/${item.id}`)}
+                >
+                  查看
+                </Button>
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<ShareAltOutlined />}
+                  onClick={() => setShareTarget(item)}
+                >
+                  分享
+                </Button>
+                <Button
+                  danger
+                  type="link"
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  disabled={deleting}
+                  onClick={() => handleDelete(item)}
+                >
+                  删除
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {total > 0 ? (
+        <div className="mobile-card-list__pagination">
+          <Pagination
+            size="small"
+            current={query.page}
+            pageSize={query.page_size}
+            total={total}
+            simple
+            showSizeChanger
+            onChange={handlePageChange}
+          />
+        </div>
+      ) : null}
+    </Spin>
+  )
+
   return (
-    <div className="contract-list">
-      {/* 页面标题 */}
+    <div className={`contract-list${isMobile ? ' contract-list--mobile' : ''}`}>
       <div className="contract-list__header">
         <div>
           <h3 className="contract-list__title">合同管理</h3>
           <span className="contract-list__subtitle">共 {total} 份合同</span>
         </div>
-        <Button
-          type="primary"
-          icon={<UploadOutlined />}
-          onClick={() => setImportOpen(true)}
-        >
-          导入合同
+        <Button type="primary" icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>
+          {isMobile ? '导入' : '导入合同'}
         </Button>
       </div>
 
-      {/* 搜索区 */}
       <Card className="contract-list__search">
-        <Form form={form} layout="inline" onFinish={handleSearch}>
+        <Form
+          form={form}
+          layout={isMobile ? 'vertical' : 'inline'}
+          onFinish={handleSearch}
+          className={isMobile ? 'contract-list__search-form--mobile' : undefined}
+        >
           <Form.Item name="keyword">
             <Input
               placeholder="合同名称 / 编号"
               allowClear
               prefix={<SearchOutlined />}
-              style={{ width: 200 }}
+              style={isMobile ? { width: '100%' } : { width: 200 }}
             />
           </Form.Item>
           <Form.Item name="status">
             <Select
               placeholder="合同状态"
               allowClear
-              style={{ width: 140 }}
+              style={isMobile ? { width: '100%' } : { width: 140 }}
               options={CONTRACT_STATUS_ORDER.map((s) => ({
                 value: s,
                 label: CONTRACT_STATUS_CONFIG[s].label,
@@ -293,10 +392,14 @@ export default function ContractListPage() {
             />
           </Form.Item>
           <Form.Item name="customer_name">
-            <Input placeholder="客户名称" allowClear style={{ width: 160 }} />
+            <Input
+              placeholder="客户名称"
+              allowClear
+              style={isMobile ? { width: '100%' } : { width: 160 }}
+            />
           </Form.Item>
           <Form.Item>
-            <Space>
+            <Space wrap>
               <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>
                 查询
               </Button>
@@ -308,55 +411,57 @@ export default function ContractListPage() {
         </Form>
       </Card>
 
-      {/* 合同表格 */}
       <Card className="contract-list__table">
-        <div className="contract-list__table-toolbar">
-          <span className="contract-list__selection-info">
-            已选择 {selectedRowKeys.length} 份合同
-          </span>
-          <Button
-            danger
-            icon={<DeleteOutlined />}
-            disabled={selectedRowKeys.length === 0}
-            loading={deleting}
-            onClick={handleBatchDelete}
-          >
-            批量删除
-          </Button>
-        </div>
-        <Table<ContractListItem>
-          rowKey="id"
-          rowSelection={{
-            selectedRowKeys,
-            preserveSelectedRowKeys: false,
-            onChange: (keys) => setSelectedRowKeys(keys),
-          }}
-          columns={columns}
-          dataSource={list}
-          loading={loading || deleting}
-          pagination={{
-            current: query.page,
-            pageSize: query.page_size,
-            total,
-            showSizeChanger: true,
-            showTotal: (t) => `共 ${t} 条`,
-            onChange: handlePageChange,
-          }}
-          scroll={{ x: 1160 }}
-        />
+        {isMobile ? (
+          renderMobileList()
+        ) : (
+          <>
+            <div className="contract-list__table-toolbar">
+              <span className="contract-list__selection-info">
+                已选择 {selectedRowKeys.length} 份合同
+              </span>
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                disabled={selectedRowKeys.length === 0}
+                loading={deleting}
+                onClick={handleBatchDelete}
+              >
+                批量删除
+              </Button>
+            </div>
+            <Table<ContractListItem>
+              rowKey="id"
+              rowSelection={{
+                selectedRowKeys,
+                preserveSelectedRowKeys: false,
+                onChange: (keys) => setSelectedRowKeys(keys),
+              }}
+              columns={columns}
+              dataSource={list}
+              loading={loading || deleting}
+              pagination={{
+                current: query.page,
+                pageSize: query.page_size,
+                total,
+                showSizeChanger: true,
+                showTotal: (t) => `共 ${t} 条`,
+                onChange: handlePageChange,
+              }}
+              scroll={{ x: 1160 }}
+            />
+          </>
+        )}
       </Card>
 
-      {/* 导入合同弹窗 */}
       <ContractImportModal
         open={importOpen}
         onClose={() => setImportOpen(false)}
         onSuccess={() => {
-          // 导入成功后刷新列表
           setQuery((q) => ({ ...q, page: 1 }))
         }}
       />
 
-      {/* 分享弹窗 */}
       {shareTarget && (
         <ContractShareModal
           contractId={shareTarget.id}

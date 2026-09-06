@@ -5,15 +5,23 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+    // 监听 0.0.0.0，便于局域网手机 / 其他电脑通过本机 IP 访问
+    host: true,
     port: 5173,
-    // 开发环境代理：把 /api 请求转发到 Go 后端，避免跨域（含 WebSocket 在线状态）
+    strictPort: true,
+    // 开发环境代理：把 /api 请求转发到本机 Go 后端（含 WebSocket）
+    // 手机访问 http://<局域网IP>:5173 时，/api 仍由本机 Vite 转到 127.0.0.1:8080
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8080',
         changeOrigin: true,
-        // 支持 WebSocket（/api/ws/contracts/:id 与 /api/share/:token/ws）
         ws: true,
       },
     },
+  },
+  preview: {
+    host: true,
+    port: 4173,
+    strictPort: true,
   },
 })

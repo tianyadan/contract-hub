@@ -230,6 +230,18 @@ func (s *ContractService) GetExportPdf(ctx context.Context, contractID, userID i
 	return s.exportPdfInfoFromVersion(detail.Version)
 }
 
+// GetExportPdfByContract 分享场景获取归档 PDF（调用方需先校验分享权限）。
+func (s *ContractService) GetExportPdfByContract(ctx context.Context, contractID int64) (*ExportPdfInfo, error) {
+	detail, err := s.contracts.GetDetailByContractID(ctx, contractID)
+	if err != nil {
+		return nil, err
+	}
+	if detail == nil || detail.Version == nil {
+		return nil, ErrContractNotFound
+	}
+	return s.exportPdfInfoFromVersion(detail.Version)
+}
+
 // GetVersionExportPdf 获取指定历史版本 PDF 归档信息。
 func (s *ContractService) GetVersionExportPdf(ctx context.Context, contractID, versionID, userID int64) (*ExportPdfInfo, error) {
 	if _, err := s.contracts.GetDetailByOwner(ctx, contractID, userID); err != nil {
@@ -297,7 +309,7 @@ func (s *ContractService) FinalizeConfirmWithPdfArchive(
 		return err
 	}
 	exportedAt := time.Now()
-	return s.contracts.FinalizeConfirmWithPdf(
+	if err := s.contracts.FinalizeConfirmWithPdf(
 		ctx,
 		versionID,
 		contractID,
@@ -307,7 +319,12 @@ func (s *ContractService) FinalizeConfirmWithPdfArchive(
 		exportedAt,
 		expectedCode,
 		confirmation,
-	)
+	); err != nil {
+		return err
+	}
+	// 终稿已归档：清除各版本电子章配置，降低章图 URL 泄露面
+	_ = s.contracts.StripSealsFromAllVersions(ctx, contractID)
+	return nil
 }
 
 // VerifyByCode 公开验真：根据验真码返回合同元数据与 PDF 签名 URL。

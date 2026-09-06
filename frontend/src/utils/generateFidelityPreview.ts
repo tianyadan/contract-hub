@@ -16,7 +16,7 @@ export interface GenerateFidelityPreviewResult {
 }
 
 /**
- * 按导出管线生成高保真阅览 PDF（草稿模式，无二维码）。
+ * 按导出管线生成高保真阅览 PDF（无二维码、无「草稿」字样）。
  */
 export async function generateFidelityPreviewPdf(
   input: GenerateFidelityPreviewInput,
@@ -31,7 +31,6 @@ export async function generateFidelityPreviewPdf(
     throw new Error('文档为空，无法生成高保真阅览')
   }
   const pngBlobs = await exportPagesAsPng(pages, {
-    draft: true,
     pixelRatio: PDF_EXPORT_PIXEL_RATIO,
   })
   const pdfBlob = await exportPagesAsPdf(pngBlobs)

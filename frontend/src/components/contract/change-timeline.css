@@ -48,6 +48,51 @@
 .change-timeline__change {
   font-size: 12px;
   line-height: 1.5;
+  border-radius: 6px;
+  padding: 6px 8px;
+  border-left: 3px solid transparent;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.change-timeline__change--clickable {
+  cursor: pointer;
+}
+
+.change-timeline__change--clickable:hover {
+  background: rgba(22, 119, 255, 0.04);
+}
+
+.change-timeline__change--active {
+  background: rgba(22, 119, 255, 0.08);
+  border-left-color: #1677ff;
+}
+
+.change-timeline__change-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.change-timeline__change-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.change-timeline__change-actions {
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.change-timeline__page-hint {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.change-timeline__locate-btn {
+  padding-inline: 4px;
+  height: auto;
+  font-size: 12px;
 }
 
 .change-timeline__diff {

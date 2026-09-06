@@ -8,11 +8,13 @@ import {
   ClearOutlined,
   HighlightOutlined,
   ItalicOutlined,
+  MoreOutlined,
   StrikethroughOutlined,
   UnderlineOutlined,
   FontColorsOutlined,
 } from '@ant-design/icons'
 import type { BlockStyle } from '../../types/contract'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { DOC_HIGHLIGHT_COLORS, highlightHexToName, highlightNameToHex } from '../../utils/contract'
 import './format-toolbar.css'
 
@@ -131,6 +133,7 @@ function ColorPalette({
  * 段落底纹、对齐方式、行距，作用于当前选中的段落块。
  */
 export default function FormatToolbar({ style, onChange, disabled = false }: FormatToolbarProps) {
+  const isMobile = useIsMobile()
   /** 工具栏操作按钮（禁用时统一灰置） */
   const btnProps = { disabled, size: 'small' as const }
 
@@ -138,6 +141,46 @@ export default function FormatToolbar({ style, onChange, disabled = false }: For
   const toggle = (key: keyof BlockStyle) => {
     onChange({ [key]: !(style?.[key] === true) } as Partial<BlockStyle>)
   }
+
+  /** 字体 / 字号 / 行距（手机收纳到「更多」） */
+  const typographyControls = (
+    <>
+      <Select
+        size="small"
+        placeholder="字体"
+        disabled={disabled}
+        value={
+          style?.east_asia_font || style?.font_name
+            ? style.east_asia_font || style.font_name
+            : undefined
+        }
+        options={FONT_OPTIONS}
+        onChange={(value) => {
+          const opt = FONT_OPTIONS.find((f) => f.value === value)
+          onChange(opt?.kind === 'cjk' ? { east_asia_font: value } : { font_name: value })
+        }}
+        style={{ width: isMobile ? '100%' : 118 }}
+      />
+      <Select
+        size="small"
+        placeholder="字号"
+        disabled={disabled}
+        value={style?.font_size ?? undefined}
+        options={FONT_SIZE_OPTIONS}
+        onChange={(value) => onChange({ font_size: value })}
+        style={{ width: isMobile ? '100%' : 88 }}
+      />
+      <Select
+        size="small"
+        placeholder="行距"
+        disabled={disabled}
+        value={style?.line_spacing_rule === 'multiple' ? style.line_spacing : undefined}
+        options={LINE_SPACING_OPTIONS}
+        onChange={(value) => onChange({ line_spacing: value, line_spacing_rule: 'multiple' })}
+        style={{ width: isMobile ? '100%' : 110 }}
+      />
+    </>
+  )
 
   /** 字体颜色 Popover 内容 */
   const fontColorPopover = (
@@ -188,38 +231,24 @@ export default function FormatToolbar({ style, onChange, disabled = false }: For
   )
 
   return (
-    <div className="format-toolbar">
-      {/* 字体 */}
-      <Select
-        size="small"
-        placeholder="字体"
-        disabled={disabled}
-        value={
-          style?.east_asia_font || style?.font_name
-            ? style.east_asia_font || style.font_name
-            : undefined
-        }
-        options={FONT_OPTIONS}
-        onChange={(value) => {
-          const opt = FONT_OPTIONS.find((f) => f.value === value)
-          // 中文字体写 east_asia_font，西文字体写 font_name
-          onChange(opt?.kind === 'cjk' ? { east_asia_font: value } : { font_name: value })
-        }}
-        style={{ width: 118 }}
-      />
-
-      {/* 字号 */}
-      <Select
-        size="small"
-        placeholder="字号"
-        disabled={disabled}
-        value={style?.font_size ?? undefined}
-        options={FONT_SIZE_OPTIONS}
-        onChange={(value) => onChange({ font_size: value })}
-        style={{ width: 88 }}
-      />
-
-      <Divider type="vertical" />
+    <div className={`format-toolbar${isMobile ? ' format-toolbar--mobile' : ''}`}>
+      {/* 桌面：字体/字号外露；手机：收纳到更多 */}
+      {!isMobile ? (
+        <>
+          {typographyControls}
+          <Divider type="vertical" />
+        </>
+      ) : (
+        <Popover
+          content={<div className="format-toolbar__more-panel">{typographyControls}</div>}
+          trigger="click"
+          placement="bottomLeft"
+        >
+          <button type="button" className="format-toolbar__btn" disabled={disabled} aria-label="更多格式">
+            <MoreOutlined />
+          </button>
+        </Popover>
+      )}
 
       {/* 加粗 / 斜体 / 下划线 / 删除线 */}
       <Tooltip title="加粗">
@@ -299,16 +328,18 @@ export default function FormatToolbar({ style, onChange, disabled = false }: For
       </Popover>
 
       {/* 文字阴影 */}
-      <Tooltip title="文字阴影">
-        <button
-          type="button"
-          className={`format-toolbar__btn${style?.shadow ? ' is-active' : ''}`}
-          {...btnProps}
-          onClick={() => toggle('shadow')}
-        >
-          <span className="format-toolbar__text-icon">影</span>
-        </button>
-      </Tooltip>
+      {!isMobile ? (
+        <Tooltip title="文字阴影">
+          <button
+            type="button"
+            className={`format-toolbar__btn${style?.shadow ? ' is-active' : ''}`}
+            {...btnProps}
+            onClick={() => toggle('shadow')}
+          >
+            <span className="format-toolbar__text-icon">影</span>
+          </button>
+        </Tooltip>
+      ) : null}
 
       <Divider type="vertical" />
 
@@ -353,19 +384,6 @@ export default function FormatToolbar({ style, onChange, disabled = false }: For
           <AlignLeftOutlined className="format-toolbar__justify" />
         </button>
       </Tooltip>
-
-      <Divider type="vertical" />
-
-      {/* 行距 */}
-      <Select
-        size="small"
-        placeholder="行距"
-        disabled={disabled}
-        value={style?.line_spacing_rule === 'multiple' ? style.line_spacing : undefined}
-        options={LINE_SPACING_OPTIONS}
-        onChange={(value) => onChange({ line_spacing: value, line_spacing_rule: 'multiple' })}
-        style={{ width: 110 }}
-      />
     </div>
   )
 }

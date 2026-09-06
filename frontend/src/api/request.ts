@@ -3,6 +3,7 @@ import type { AxiosError, AxiosRequestConfig } from 'axios'
 import { getToken, clearAuth } from '../utils/token'
 import { getMessageApi } from '../utils/message'
 import type { ApiResponse } from '../types/auth'
+import type { VersionConflictPayload } from '../utils/conflictResolve'
 
 declare module 'axios' {
   interface AxiosRequestConfig {
@@ -127,6 +128,24 @@ export function parseDownloadFileName(
     return plainMatch[1].trim()
   }
   return fallbackName
+}
+
+/**
+ * 从保存版本失败响应中提取块级冲突载荷（HTTP 409 / code 40901）。
+ */
+export function getVersionConflictPayload(error: unknown): VersionConflictPayload | null {
+  const ax = error as AxiosError<ApiResponse<VersionConflictPayload>>
+  const body = ax?.response?.data
+  if (ax?.response?.status === 409 && body?.code === 40901 && body.data) {
+    return body.data
+  }
+  return null
+}
+
+/** 读取接口错误文案（供 skipErrorToast 的调用方自行提示） */
+export function getApiErrorMessage(error: unknown, fallback = '请求失败，请稍后重试'): string {
+  const ax = error as AxiosError<ApiResponse<unknown>>
+  return ax?.response?.data?.message || (error instanceof Error ? error.message : fallback)
 }
 
 export default request

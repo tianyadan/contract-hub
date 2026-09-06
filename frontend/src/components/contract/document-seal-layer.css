@@ -1,0 +1,62 @@
+.doc-seal-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.doc-seal {
+  position: absolute;
+  z-index: 8;
+  user-select: none;
+}
+
+.doc-seal img {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
+
+.doc-seal--interactive {
+  cursor: grab;
+}
+
+.doc-seal--interactive:active {
+  cursor: grabbing;
+}
+
+.doc-seal--selected {
+  outline: 2px solid #00b96b;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.doc-seal__toolbar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  pointer-events: auto;
+}
+
+.doc-seal__toolbar button {
+  border: none;
+  background: #f5f5f5;
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.doc-seal__remove {
+  color: #cf1322 !important;
+}

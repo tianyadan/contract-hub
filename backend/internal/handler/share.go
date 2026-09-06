@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -219,7 +220,16 @@ func (h *ShareHandler) ShareSaveVersion(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.ShareSaveVersion(c.Request.Context(), token, name, req.DocumentContent, req.ChangeSummary, c.ClientIP(), c.Request.UserAgent())
+	result, err := h.svc.ShareSaveVersion(
+		c.Request.Context(),
+		token,
+		name,
+		req.DocumentContent,
+		req.ChangeSummary,
+		req.BaseVersionID,
+		c.ClientIP(),
+		c.Request.UserAgent(),
+	)
 	if err != nil {
 		writeShareError(c, err)
 		return
@@ -400,6 +410,18 @@ func (h *ShareHandler) ShareExportPdf(c *gin.Context) {
 	response.Success(c, http.StatusOK, "ok", result)
 }
 
+// ShareGetExportPdf 外部协作者获取已归档终稿 PDF 下载信息。
+func (h *ShareHandler) ShareGetExportPdf(c *gin.Context) {
+	token := c.Param("token")
+	name := collaboratorName(c)
+	result, err := h.svc.ShareGetExportPdf(c.Request.Context(), token, name)
+	if err != nil {
+		writeShareError(c, err)
+		return
+	}
+	response.Success(c, http.StatusOK, "ok", result)
+}
+
 // ListConfirmations 内部查看确认记录
 // @Summary 查看确认记录
 // @Description 查看合同的确认记录
@@ -481,8 +503,62 @@ func collaboratorName(c *gin.Context) string {
 	return name
 }
 
+// UploadShareSeal 外部协作者上传合同级电子章。
+func (h *ShareHandler) UploadShareSeal(c *gin.Context) {
+	token := c.Param("token")
+	name := collaboratorName(c)
+	if name == "" {
+		response.Error(c, http.StatusBadRequest, 40001, "请先加入协作")
+		return
+	}
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, 40001, "请上传印章图片文件")
+		return
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, 40001, "无法读取上传文件")
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, 2*1024*1024+1))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, 40001, "读取文件失败")
+		return
+	}
+	mimeType := fileHeader.Header.Get("Content-Type")
+	if mimeType == "" || mimeType == "application/octet-stream" {
+		mimeType = service.GuessSealMime(fileHeader.Filename)
+	}
+	result, err := h.svc.UploadShareSeal(c.Request.Context(), token, name, data, mimeType)
+	if err != nil {
+		writeShareError(c, err)
+		return
+	}
+	response.Success(c, http.StatusOK, "上传成功", result)
+}
+
+// StreamShareSeal 外部分享读取合同级电子章图。
+func (h *ShareHandler) StreamShareSeal(c *gin.Context) {
+	token := c.Param("token")
+	ossKey := c.Query("key")
+	data, mimeType, err := h.svc.StreamShareSeal(c.Request.Context(), token, ossKey)
+	if err != nil {
+		writeShareError(c, err)
+		return
+	}
+	c.Header("Cache-Control", "private, max-age=300")
+	c.Data(http.StatusOK, mimeType, data)
+}
+
 // writeShareError 分享模块错误转换。
 func writeShareError(c *gin.Context, err error) {
+	var conflict *service.VersionConflictError
+	if errors.As(err, &conflict) {
+		response.ErrorWithData(c, http.StatusConflict, 40901, conflict.Error(), conflict.Payload)
+		return
+	}
 	switch {
 	case errors.Is(err, service.ErrInvalidInput),
 		errors.Is(err, service.ErrInvalidPdfInput),
@@ -504,12 +580,16 @@ func writeShareError(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrShareGateIncomplete):
 		response.Error(c, http.StatusBadRequest, 40001, err.Error())
 	case errors.Is(err, service.ErrContractNotFound),
-		errors.Is(err, service.ErrVersionNotFound):
+		errors.Is(err, service.ErrVersionNotFound),
+		errors.Is(err, service.ErrNoPdfArchived):
 		response.Error(c, http.StatusNotFound, 40401, err.Error())
 	case errors.Is(err, service.ErrContractLocked):
 		response.Error(c, http.StatusForbidden, 40302, err.Error())
 	case errors.Is(err, service.ErrAlreadyConfirmed):
 		response.Error(c, http.StatusForbidden, 40302, err.Error())
+	case errors.Is(err, service.ErrVersionRace),
+		errors.Is(err, service.ErrVersionConflict):
+		response.Error(c, http.StatusConflict, 40902, err.Error())
 	default:
 		log.Printf("share error: %v", err)
 		response.Error(c, http.StatusInternalServerError, 50000, "服务器内部错误")

@@ -6,12 +6,11 @@ import {
   Button,
   Card,
   Col,
-  Collapse,
   Input,
   Row,
   Skeleton,
   Space,
-  Spin,
+  Tabs,
   Tag,
   Typography,
 } from 'antd'
@@ -25,7 +24,6 @@ import dayjs from 'dayjs'
 import {
   confirmContractAck,
   confirmContractWithPdf,
-  fetchContractPreview,
   getConfirmProgress,
   getContractChanges,
   getContractConfirmations,
@@ -36,6 +34,7 @@ import {
   prepareFinalExport,
   saveContractVersion,
   uploadContractExportPdf,
+  uploadContractSeal,
 } from '../../api/contractApi'
 import type {
   ContractChange,
@@ -48,19 +47,28 @@ import type {
 import ContractStatusTag from '../../components/ContractStatusTag'
 import DocumentEditor, { type DocumentEditorHandle } from '../../components/contract/DocumentEditor'
 import ChangeTimeline from '../../components/contract/ChangeTimeline'
-import CollapsibleScrollSection from '../../components/contract/CollapsibleScrollSection'
 import VersionHistoryList from '../../components/contract/VersionHistoryList'
-import OnlinePresenceBar from '../../components/contract/OnlinePresenceBar'
+import OnlinePresenceFloat from '../../components/contract/OnlinePresenceFloat'
+import ChangeInspectExitFloat from '../../components/contract/ChangeInspectExitFloat'
+import VersionConflictModal from '../../components/contract/VersionConflictModal'
+import { getApiErrorMessage, getVersionConflictPayload } from '../../api/request'
+import type { VersionConflictPayload } from '../../utils/conflictResolve'
 import ConfirmStatusBanner from '../../components/contract/ConfirmStatusBanner'
 import StaleContentBanner from '../../components/contract/StaleContentBanner'
 import ConfirmActionBar from '../../components/contract/ConfirmActionBar'
 import ContractShareModal from '../../components/contract/ContractShareModal'
-import DocxPreview from '../../components/contract/DocxPreview'
 import { useCollaboration } from '../../hooks/useCollaboration'
+import { useIsMobile } from '../../hooks/useMediaQuery'
+import { useWatermarkSetting } from '../../hooks/useWatermarkSetting'
 import { isContractLocked, normalizeDocumentContent, prepareSaveDocumentContent } from '../../utils/documentContent'
 import { hasUserConfirmedVersion, willFinalizeAfterConfirm } from '../../utils/confirmProgress'
 import { getStoredUser } from '../../utils/token'
 import { isValidCnMobile } from '../../utils/phone'
+import {
+  buildChangeHighlightState,
+  documentHasBlock,
+  resolveLocateVersionId,
+} from '../../utils/changeLocate'
 import {
   collectExportPageElements,
   exportPagesAsPng,
@@ -82,6 +90,7 @@ export default function ContractDetailPage() {
   const { id } = useParams<{ id: string }>()
   const contractId = Number(id)
   const { message, modal } = App.useApp()
+  const isMobile = useIsMobile()
 
   const [detail, setDetail] = useState<ContractDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -98,9 +107,11 @@ export default function ContractDetailPage() {
   const [confirming, setConfirming] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
-  const [previewData, setPreviewData] = useState<ArrayBuffer | null>(null)
-  const [previewLoading, setPreviewLoading] = useState(false)
-  const [previewTried, setPreviewTried] = useState(false)
+  const [activeChangeId, setActiveChangeId] = useState<number | null>(null)
+  const [pageIndexByBlockId, setPageIndexByBlockId] = useState<Record<string, number>>({})
+  const [conflictPayload, setConflictPayload] = useState<VersionConflictPayload | null>(null)
+  const [conflictSaving, setConflictSaving] = useState(false)
+  const { activeText: watermarkText, activeStyle: watermarkStyle } = useWatermarkSetting()
 
   const fetchContractConfirmProgress = useCallback(
     () => getConfirmProgress(contractId),
@@ -126,6 +137,81 @@ export default function ContractDetailPage() {
   const isLocked = detail ? isContractLocked(detail.status) : false
   const editorReadOnly = Boolean(viewingVersion) || isLocked
 
+  /** 当前编辑器展示的文档（最新或历史版本） */
+  const displayedContent = viewingVersion
+    ? viewingVersion.document_content
+    : documentContent
+
+  /** 根据当前分页刷新「约第 N 页」提示 */
+  const refreshPageIndexMap = useCallback(() => {
+    const editor = editorRef.current
+    if (!editor || changes.length === 0) {
+      setPageIndexByBlockId({})
+      return
+    }
+    const map: Record<string, number> = {}
+    for (const change of changes) {
+      if (!change.block_id || map[change.block_id] != null) continue
+      map[change.block_id] = editor.getPageIndexForBlock(change.block_id)
+    }
+    setPageIndexByBlockId(map)
+  }, [changes])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => refreshPageIndexMap(), 200)
+    return () => window.clearTimeout(timer)
+  }, [displayedContent, refreshPageIndexMap, viewingVersion])
+
+  /** 点击变更记录：跳转页+块，并 Git 风格高亮 */
+  const handleLocateChange = useCallback(
+    async (change: ContractChange) => {
+      if (!change.block_id) {
+        message.warning('该变更缺少段落定位信息')
+        return
+      }
+
+      let content = displayedContent
+      if (!documentHasBlock(content, change.block_id)) {
+        const versionId = resolveLocateVersionId(change)
+        try {
+          const v = await getContractVersionDetail(contractId, versionId)
+          const normalized = {
+            ...v,
+            document_content:
+              normalizeDocumentContent(v.document_content) ?? v.document_content,
+          }
+          setViewingVersion(normalized)
+          content = normalized.document_content
+          message.info(
+            change.change_type === 1
+              ? '已切换到删除前的版本以便定位'
+              : `已切换到 V${v.version_no} 以便定位该变更`,
+          )
+          // 等待编辑器载入新文档后再跳转
+          await new Promise((r) => setTimeout(r, 280))
+        } catch {
+          message.warning('无法加载包含该变更的版本')
+          return
+        }
+      }
+
+      if (!documentHasBlock(content, change.block_id)) {
+        message.warning('无法定位到该段落（可能已被后续大幅改写）')
+        return
+      }
+
+      const ok = await editorRef.current?.jumpToBlock(change.block_id)
+      if (!ok) {
+        message.warning('无法定位到该段落所在页')
+        return
+      }
+      editorRef.current?.setChangeHighlight(buildChangeHighlightState(change))
+      setActiveChangeId(change.id)
+      refreshPageIndexMap()
+    },
+    [contractId, displayedContent, message, refreshPageIndexMap],
+  )
+
   const loadDetail = useCallback(async (restorePage?: number) => {
     if (!contractId) return
     setLoading(true)
@@ -137,8 +223,6 @@ export default function ContractDetailPage() {
       contentRef.current = content
       setOriginalSnapshot(JSON.stringify(content))
       setViewingVersion(null)
-      setPreviewData(null)
-      setPreviewTried(false)
       if (restorePage != null) {
         requestAnimationFrame(() => {
           editorRef.current?.setCurrentPage(restorePage)
@@ -150,19 +234,6 @@ export default function ContractDetailPage() {
       setLoading(false)
     }
   }, [contractId, message])
-
-  /** 展开「导入原文件参考」时再加载 DOCX，避免每次进详情都请求 */
-  const handleLoadPreview = async () => {
-    if (previewTried || previewLoading) return
-    setPreviewLoading(true)
-    try {
-      const preview = await fetchContractPreview(contractId)
-      setPreviewData(preview)
-    } finally {
-      setPreviewTried(true)
-      setPreviewLoading(false)
-    }
-  }
 
   const loadChangesAndVersions = useCallback(async () => {
     if (!contractId) return
@@ -244,30 +315,90 @@ export default function ContractDetailPage() {
       message.info('文档没有修改，无需保存新版本')
       return
     }
-  const payload: DocumentContent = prepareSaveDocumentContent({
-    ...latestContent,
-  })
+    const payload: DocumentContent = prepareSaveDocumentContent({
+      ...latestContent,
+    })
     setSaving(true)
     try {
       const result = await saveContractVersion(contractId, {
         document_content: payload,
         change_summary: changeSummary,
+        base_version_id: detail?.current_version_id,
       })
       message.success(
-        result.change_count > 0
-          ? `已保存为 V${result.version_no}，记录 ${result.change_count} 条变更`
-          : `已保存为 V${result.version_no}`,
+        result.auto_merged
+          ? `已自动合并对方修改并保存为 V${result.version_no}`
+          : result.change_count > 0
+            ? `已保存为 V${result.version_no}，记录 ${result.change_count} 条变更`
+            : `已保存为 V${result.version_no}`,
       )
       setChangeSummary('')
-      setOriginalSnapshot(JSON.stringify(payload))
-      setDetail((prev) =>
-        prev ? { ...prev, current_version_no: result.version_no } : prev,
-      )
-      await loadChangesAndVersions()
-    } catch {
-      // 错误提示已在拦截器处理
+      dismissStaleVersion()
+      if (result.auto_merged) {
+        // 服务端合并结果与本地稿不同，重新拉取正文
+        await Promise.all([loadDetail(), loadChangesAndVersions()])
+      } else {
+        setOriginalSnapshot(JSON.stringify(payload))
+        setDetail((prev) =>
+          prev
+            ? {
+                ...prev,
+                current_version_no: result.version_no,
+                current_version_id: result.version_id,
+              }
+            : prev,
+        )
+        await loadChangesAndVersions()
+      }
+    } catch (error) {
+      const conflict = getVersionConflictPayload(error)
+      if (conflict) {
+        setConflictPayload(conflict)
+        return
+      }
+      message.error(getApiErrorMessage(error, '保存失败'))
     } finally {
       setSaving(false)
+    }
+  }
+
+  /** 冲突弹窗确认：按选择合并后基于对方最新版本再保存 */
+  const handleConflictConfirm = async (resolved: DocumentContent, baseVersionId: number) => {
+    setConflictSaving(true)
+    try {
+      const payload = prepareSaveDocumentContent(resolved)
+      const result = await saveContractVersion(contractId, {
+        document_content: payload,
+        change_summary: changeSummary || '合并冲突后保存',
+        base_version_id: baseVersionId,
+      })
+      setConflictPayload(null)
+      setDocumentContent(payload)
+      contentRef.current = payload
+      setOriginalSnapshot(JSON.stringify(payload))
+      setChangeSummary('')
+      setDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              current_version_no: result.version_no,
+              current_version_id: result.version_id,
+            }
+          : prev,
+      )
+      dismissStaleVersion()
+      message.success(`冲突已解决，已保存为 V${result.version_no}`)
+      await loadChangesAndVersions()
+    } catch (error) {
+      const conflict = getVersionConflictPayload(error)
+      if (conflict) {
+        setConflictPayload(conflict)
+        message.warning('合并期间又有新版本，请重新选择冲突区域')
+        return
+      }
+      message.error(getApiErrorMessage(error, '合并保存失败'))
+    } finally {
+      setConflictSaving(false)
     }
   }
 
@@ -314,7 +445,7 @@ export default function ContractDetailPage() {
         collectExportPageElements(editorRef.current?.getExportRoot() ?? document.body)
       if (pages.length === 0) throw new Error('文档为空，无法确认')
 
-      const pngBlobs = await exportPagesAsPng(pages, { draft: false, pixelRatio: PDF_EXPORT_PIXEL_RATIO })
+      const pngBlobs = await exportPagesAsPng(pages, { pixelRatio: PDF_EXPORT_PIXEL_RATIO })
       const withQr = await Promise.all(
         pngBlobs.map((blob, index) =>
           overlayQrWatermark(blob, verify_code, index + 1, public_web_origin),
@@ -360,7 +491,7 @@ export default function ContractDetailPage() {
         collectExportPageElements(editorRef.current?.getExportRoot() ?? document.body)
       if (pages.length === 0) throw new Error('文档为空，无法导出')
 
-      const pngBlobs = await exportPagesAsPng(pages, { draft, pixelRatio: PDF_EXPORT_PIXEL_RATIO })
+      const pngBlobs = await exportPagesAsPng(pages, { pixelRatio: PDF_EXPORT_PIXEL_RATIO })
       const pdfBlob = await exportPagesAsPdf(pngBlobs)
       const hash = await sha256Blob(pdfBlob)
       downloadPdf(pdfBlob, draft ? `${baseName}-草稿` : `${baseName}-终稿`)
@@ -403,15 +534,30 @@ export default function ContractDetailPage() {
         ...v,
         document_content: normalizeDocumentContent(v.document_content) ?? v.document_content,
       })
+      setActiveChangeId(null)
+      editorRef.current?.setChangeHighlight(null)
       message.info(`正在查看历史版本 V${v.version_no}`)
     } catch {
       message.error('版本内容加载失败')
     }
   }
 
-  const handleBackToCurrent = () => {
+  /** 退出变更/历史查看：留在当前页，恢复可编辑（权限允许时） */
+  const handleResumeEdit = useCallback(() => {
+    const page = editorRef.current?.getCurrentPage() ?? 0
+    const fromHistory = Boolean(viewingVersion)
     setViewingVersion(null)
-  }
+    setActiveChangeId(null)
+    editorRef.current?.setChangeHighlight(null)
+    if (!fromHistory) return
+    // 切回当前版本文档后保留页码，避免回到第 1 页
+    const restorePage = () => editorRef.current?.setCurrentPage(page)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(restorePage)
+    })
+    window.setTimeout(restorePage, 120)
+    window.setTimeout(restorePage, 320)
+  }, [viewingVersion])
 
   if (loading) {
     return (
@@ -432,53 +578,139 @@ export default function ContractDetailPage() {
     )
   }
 
-  return (
-    <div className="contract-detail">
-      <Card className="contract-detail__header" styles={{ body: { padding: '16px 20px' } }}>
-        <div className="contract-detail__header-main">
-          <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/contracts')}>
-            返回
-          </Button>
-          <div className="contract-detail__title-block">
-            <Typography.Title level={4} style={{ margin: 0 }}>
-              {detail.contract_name}
-            </Typography.Title>
-            <Space size="small" className="contract-detail__meta">
-              <Typography.Text type="secondary">{detail.contract_no}</Typography.Text>
-              <ContractStatusTag status={detail.status} />
-              <Tag>V{detail.current_version_no}</Tag>
-              {detail.customer_name && (
-                <Typography.Text type="secondary">客户：{detail.customer_name}</Typography.Text>
-              )}
-            </Space>
-          </div>
-        </div>
+  /** 打开分享弹窗（需客户姓名与预留手机号） */
+  const openShareModal = () => {
+    if (!hasShareGateInfo) {
+      message.warning('请先完善合同的客户姓名与预留手机号后再分享')
+      return
+    }
+    setShareOpen(true)
+  }
 
-        <div className="contract-detail__header-actions">
-          <Space>
+  /** 侧栏 Tabs（版本 / 历史 / 确认），手机与桌面共用 */
+  const sideTabItems = [
+    {
+      key: 'changes',
+      label: isMobile ? (
+        '版本'
+      ) : (
+        <Space size={6}>
+          <HistoryOutlined />
+          版本记录
+          {versions.length > 0 ? <Tag style={{ marginInlineEnd: 0 }}>{versions.length}</Tag> : null}
+        </Space>
+      ),
+      children: (
+        <div className="contract-detail__side-pane">
+          <ChangeTimeline
+            changes={changes}
+            versions={versions}
+            activeChangeId={activeChangeId}
+            onLocateChange={(change) => void handleLocateChange(change)}
+            pageIndexByBlockId={pageIndexByBlockId}
+          />
+        </div>
+      ),
+    },
+    {
+      key: 'history',
+      label: isMobile ? '历史' : '历史版本',
+      children: (
+        <div className="contract-detail__side-pane">
+          <VersionHistoryList versions={versions} onView={handleViewVersion} />
+        </div>
+      ),
+    },
+    {
+      key: 'confirms',
+      label: isMobile ? (
+        '确认'
+      ) : (
+        <Space size={6}>
+          <CheckCircleOutlined />
+          确认记录
+        </Space>
+      ),
+      children: (
+        <div className="contract-detail__side-pane">
+          {confirmations.length === 0 ? (
+            <Typography.Text type="secondary">暂无确认记录</Typography.Text>
+          ) : (
+            confirmations.map((item) => (
+              <div key={item.id} className="contract-detail__confirmation-item">
+                <Space orientation="vertical" size={0} style={{ width: '100%' }}>
+                  <Space size="small" wrap>
+                    <Typography.Text strong>{item.confirmer_name}</Typography.Text>
+                    <Tag color={item.confirm_status === 1 ? 'green' : 'default'}>
+                      {item.confirm_status === 1 ? '已确认' : '已取消确认'}
+                    </Tag>
+                    <Tag color={item.confirmer_type === 0 ? 'blue' : 'orange'}>
+                      {item.confirmer_type === 0 ? '内部用户' : '外部协作者'}
+                    </Tag>
+                  </Space>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {dayjs(item.confirm_time).format('YYYY-MM-DD HH:mm')}
+                  </Typography.Text>
+                </Space>
+              </div>
+            ))
+          )}
+        </div>
+      ),
+    },
+  ]
+
+  return (
+    <div className={`contract-detail${isMobile ? ' contract-detail--mobile' : ''}`}>
+      <Card className="contract-detail__header" variant="borderless">
+        <div className="contract-detail__header-row">
+          <div className="contract-detail__header-main">
             <Button
-              icon={<ShareAltOutlined />}
-              disabled={!hasShareGateInfo}
-              onClick={() => {
-                if (!hasShareGateInfo) {
-                  message.warning('请先完善合同的客户姓名与预留手机号后再分享')
-                  return
-                }
-                setShareOpen(true)
-              }}
+              type="text"
+              className="contract-detail__back"
+              icon={<ArrowLeftOutlined />}
+              aria-label="返回合同列表"
+              onClick={() => navigate('/contracts')}
             >
-              分享
+              {isMobile ? null : '返回'}
             </Button>
-            <ConfirmActionBar
-              onSave={handleSaveVersion}
-              onConfirm={handleConfirm}
-              onDownload={isLocked ? handleDownloadFinalPdf : handleExportPdf}
-              saving={saving}
-              confirming={confirming}
-              downloading={exporting}
-              editReadOnly={editorReadOnly}
-            />
-          </Space>
+            <div className="contract-detail__title-block">
+              <Typography.Title level={4} className="contract-detail__title" ellipsis>
+                {detail.contract_name}
+              </Typography.Title>
+              <div className="contract-detail__meta">
+                {!isMobile ? (
+                  <Typography.Text type="secondary">{detail.contract_no}</Typography.Text>
+                ) : null}
+                <ContractStatusTag status={detail.status} />
+                <Tag>V{detail.current_version_no}</Tag>
+                {!isMobile && detail.customer_name ? (
+                  <Typography.Text type="secondary">客户：{detail.customer_name}</Typography.Text>
+                ) : null}
+                {hasChanges && !viewingVersion && !isLocked ? (
+                  <Tag color="orange">{isMobile ? '未保存' : '有未保存修改'}</Tag>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          {/* 桌面：顶栏操作；手机：下沉到底部 Dock */}
+          {!isMobile ? (
+            <div className="contract-detail__header-actions">
+              <Button icon={<ShareAltOutlined />} disabled={!hasShareGateInfo} onClick={openShareModal}>
+                分享
+              </Button>
+              <ConfirmActionBar
+                onSave={handleSaveVersion}
+                onConfirm={handleConfirm}
+                onDownload={isLocked ? handleDownloadFinalPdf : handleExportPdf}
+                saving={saving}
+                confirming={confirming}
+                downloading={exporting}
+                editReadOnly={editorReadOnly}
+              />
+            </div>
+          ) : null}
         </div>
       </Card>
 
@@ -487,7 +719,7 @@ export default function ContractDetailPage() {
           className="contract-detail__version-alert"
           type="info"
           showIcon
-          message="合同已确认锁定，文档为只读；可下载终稿 PDF"
+          message={isMobile ? '合同已锁定，可下载终稿 PDF' : '合同已确认锁定，文档为只读；可下载终稿 PDF'}
         />
       )}
 
@@ -496,156 +728,148 @@ export default function ContractDetailPage() {
           className="contract-detail__version-alert"
           type="warning"
           showIcon
-          message={`正在查看历史版本 V${viewingVersion.version_no}（只读），编辑与保存已禁用`}
+          message={
+            isMobile
+              ? `查看历史 V${viewingVersion.version_no}（只读）`
+              : `正在查看历史版本 V${viewingVersion.version_no}（只读），编辑与保存已禁用`
+          }
           action={
-            <Button size="small" onClick={handleBackToCurrent}>
-              返回当前版本
+            <Button size="small" onClick={handleResumeEdit}>
+              返回编辑
             </Button>
           }
         />
       )}
 
-      <Row gutter={16} className="contract-detail__body">
+      <Row gutter={[16, 16]} className="contract-detail__body">
         <Col xs={24} lg={16}>
           <Card
             title={
-              <Space>
-                <Typography.Text strong>
-                  文档内容{viewingVersion ? `（历史版本 V${viewingVersion.version_no}）` : ''}
-                </Typography.Text>
-                {hasChanges && !viewingVersion && !isLocked && (
-                  <Tag color="orange">有未保存修改</Tag>
-                )}
-              </Space>
+              isMobile ? undefined : (
+                <Space size={8}>
+                  <Typography.Text strong>
+                    文档编辑{viewingVersion ? ` · 历史 V${viewingVersion.version_no}` : ''}
+                  </Typography.Text>
+                </Space>
+              )
             }
             className="contract-detail__editor-card"
           >
-            <OnlinePresenceBar users={users} isConnected={isConnected} />
-            <ConfirmStatusBanner
-              progress={confirmProgress}
-              viewerType={0}
-              contractStatus={detail.status}
-              currentVersionNo={detail.current_version_no}
-              selfConfirmed={selfConfirmed}
-            />
-            <StaleContentBanner
-              payload={staleVersion}
-              onRefresh={() => void handleStaleRefresh()}
-              onDismiss={dismissStaleVersion}
-              disabled={Boolean(viewingVersion) || isLocked}
-            />
-            <DocumentEditor
-              ref={editorRef}
-              documentContent={
-                viewingVersion ? viewingVersion.document_content : documentContent
-              }
-              onChange={handleEditorChange}
-              readOnly={editorReadOnly}
-            />
+            <div className="contract-detail__editor-workspace">
+              <div className="contract-detail__editor-banners">
+                <ConfirmStatusBanner
+                  progress={confirmProgress}
+                  viewerType={0}
+                  contractStatus={detail.status}
+                  currentVersionNo={detail.current_version_no}
+                  selfConfirmed={selfConfirmed}
+                />
+                <StaleContentBanner
+                  payload={staleVersion}
+                  onRefresh={() => void handleStaleRefresh()}
+                  onDismiss={dismissStaleVersion}
+                  disabled={Boolean(viewingVersion) || isLocked}
+                />
+              </div>
+
+              <DocumentEditor
+                ref={editorRef}
+                documentContent={
+                  viewingVersion ? viewingVersion.document_content : documentContent
+                }
+                onChange={handleEditorChange}
+                readOnly={editorReadOnly}
+                watermarkText={watermarkText}
+                watermarkStyle={watermarkStyle}
+                allowHeaderFooterEdit={!isLocked && !viewingVersion}
+                allowSealEdit={!isLocked && !viewingVersion}
+                sealDisplayContext={
+                  contractId ? { mode: 'contract', contractId } : null
+                }
+                uploadSealImage={
+                  contractId
+                    ? (file) => uploadContractSeal(contractId, file)
+                    : undefined
+                }
+              />
+
+              <OnlinePresenceFloat users={users} isConnected={isConnected} />
+              <ChangeInspectExitFloat
+                visible={Boolean(viewingVersion) || activeChangeId != null}
+                canEdit={!isLocked}
+                viewingHistory={Boolean(viewingVersion)}
+                versionNo={viewingVersion?.version_no}
+                onExit={handleResumeEdit}
+              />
+            </div>
+
             {!editorReadOnly && (
               <div className="contract-detail__save-bar">
                 <Input
-                  placeholder="本次修改说明（选填）"
+                  placeholder={isMobile ? '修改说明（选填）' : '本次修改说明（选填），保存版本时一并提交'}
                   value={changeSummary}
                   onChange={(e) => setChangeSummary(e.target.value)}
                   maxLength={200}
                 />
               </div>
             )}
-            <Collapse
-              className="contract-detail__source-collapse"
-              onChange={(keys) => {
-                if (Array.isArray(keys) ? keys.includes('source') : keys === 'source') {
-                  void handleLoadPreview()
-                }
-              }}
-              items={[
-                {
-                  key: 'source',
-                  label: '导入原文件参考（只读，不影响导出）',
-                  children: previewLoading ? (
-                    <div style={{ textAlign: 'center', padding: 24 }}>
-                      <Spin />
-                    </div>
-                  ) : previewData ? (
-                    <DocxPreview data={previewData} />
-                  ) : previewTried ? (
-                    <Typography.Text type="secondary">暂无导入原文件或原文件已不可用</Typography.Text>
-                  ) : (
-                    <Typography.Text type="secondary">展开后将加载导入的 DOCX 原文件</Typography.Text>
-                  ),
-                },
-              ]}
-            />
           </Card>
         </Col>
 
         <Col xs={24} lg={8}>
-          <CollapsibleScrollSection
-            panelKey="change-timeline"
-            title={
-              <Space size={6}>
-                <HistoryOutlined />
-                版本记录
-              </Space>
-            }
-            count={versions.length}
-            maxVisibleRows={5}
-            rowHeight={88}
-          >
-            <ChangeTimeline changes={changes} versions={versions} />
-          </CollapsibleScrollSection>
-
-          <CollapsibleScrollSection
-            panelKey="version-history"
-            title="历史版本"
-            count={versions.length}
-            maxVisibleRows={5}
-            rowHeight={64}
-          >
-            <VersionHistoryList versions={versions} onView={handleViewVersion} />
-          </CollapsibleScrollSection>
-
-          <Card
-            title={
-              <Space>
-                <CheckCircleOutlined />
-                确认记录
-              </Space>
-            }
-            className="contract-detail__confirmations-card"
-          >
-            {confirmations.length === 0 ? (
-              <Typography.Text type="secondary">暂无确认记录</Typography.Text>
-            ) : (
-              confirmations.map((item) => (
-                <div key={item.id} className="contract-detail__confirmation-item">
-                  <Space orientation="vertical" size={0} style={{ width: '100%' }}>
-                    <Space size="small">
-                      <Typography.Text strong>{item.confirmer_name}</Typography.Text>
-                      <Tag color={item.confirm_status === 1 ? 'green' : 'default'}>
-                        {item.confirm_status === 1 ? '已确认' : '已取消确认'}
-                      </Tag>
-                      <Tag color={item.confirmer_type === 0 ? 'blue' : 'orange'}>
-                        {item.confirmer_type === 0 ? '内部用户' : '外部协作者'}
-                      </Tag>
-                    </Space>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      {dayjs(item.confirm_time).format('YYYY-MM-DD HH:mm')}
-                    </Typography.Text>
-                  </Space>
-                </div>
-              ))
-            )}
-          </Card>
+          <div className="contract-detail__side">
+            <Card
+              className={`contract-detail__side-card${isMobile ? ' contract-detail__side-card--mobile-tabs' : ''}`}
+              styles={{ body: { padding: 0 } }}
+            >
+              <Tabs defaultActiveKey="changes" size={isMobile ? 'small' : 'middle'} items={sideTabItems} />
+            </Card>
+          </div>
         </Col>
       </Row>
+
+      {/* 手机端底部固定操作栏 */}
+      {isMobile ? (
+        <div className="contract-detail__mobile-dock">
+          <div className="contract-detail__mobile-dock-meta">
+            <Typography.Text strong ellipsis style={{ maxWidth: '52vw' }}>
+              {detail.contract_name}
+            </Typography.Text>
+            <Button
+              size="small"
+              icon={<ShareAltOutlined />}
+              disabled={!hasShareGateInfo}
+              onClick={openShareModal}
+            >
+              分享
+            </Button>
+          </div>
+          <ConfirmActionBar
+            layout="horizontal"
+            compact
+            onSave={handleSaveVersion}
+            onConfirm={handleConfirm}
+            onDownload={isLocked ? handleDownloadFinalPdf : handleExportPdf}
+            saving={saving}
+            confirming={confirming}
+            downloading={exporting}
+            editReadOnly={editorReadOnly}
+          />
+        </div>
+      ) : null}
 
       <ContractShareModal
         contractId={contractId}
         contractName={detail.contract_name}
         open={shareOpen}
         onClose={() => setShareOpen(false)}
+      />
+      <VersionConflictModal
+        open={conflictPayload != null}
+        payload={conflictPayload}
+        confirming={conflictSaving}
+        onCancel={() => setConflictPayload(null)}
+        onConfirm={(resolved, baseVersionId) => void handleConflictConfirm(resolved, baseVersionId)}
       />
     </div>
   )

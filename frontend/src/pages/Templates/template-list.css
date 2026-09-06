@@ -2,3 +2,26 @@
   max-width: 1200px;
   margin: 0 auto;
 }
+
+.template-list__search {
+  width: 280px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 767px) {
+  .template-list--mobile .template-list__search {
+    width: 100%;
+  }
+
+  .template-list--mobile .ant-card-head {
+    padding-inline: 12px;
+  }
+
+  .template-list--mobile .ant-card-body {
+    padding: 12px;
+  }
+
+  .template-list--mobile .ant-list-empty-text {
+    padding: 0;
+  }
+}

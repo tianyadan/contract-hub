@@ -1,0 +1,50 @@
+.seal-settings__upload {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.seal-settings__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.seal-settings__card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #f0f0f0;
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.seal-settings__preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px dashed #e8e8e8;
+}
+
+.seal-settings__actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+@media (max-width: 767px) {
+  .seal-settings--mobile .seal-settings__upload {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .seal-settings--mobile .seal-settings__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

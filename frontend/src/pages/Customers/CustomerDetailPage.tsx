@@ -6,19 +6,23 @@ import {
   Card,
   Col,
   Descriptions,
+  Empty,
   Form,
   Input,
   Modal,
   Row,
   Select,
+  Space,
+  Spin,
   Table,
   Typography,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { ArrowLeftOutlined, EditOutlined, FileAddOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, DeleteOutlined, EditOutlined, FileAddOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import {
   createContractFromTemplate,
+  deleteCustomer,
   getCustomerContracts,
   getCustomerDetail,
   updateCustomer,
@@ -28,21 +32,27 @@ import type { Customer } from '../../types/customer'
 import type { ContractListItem } from '../../types/contract'
 import type { TemplateListItem } from '../../types/template'
 import ContractStatusTag from '../../components/ContractStatusTag'
+import DocxIcon from '../../components/DocxIcon'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { isValidCnMobile, normalizePhoneDigits, phoneFormRules } from '../../utils/phone'
+import '../../styles/mobile-list.css'
 import './customer-detail.css'
 
 /**
  * 客户详情页：客户档案 + 合同列表 + 从模板添加合同。
+ * 手机端合同列表用卡片，桌面端保留 Table。
  */
 export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const customerId = Number(id)
   const navigate = useNavigate()
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
+  const isMobile = useIsMobile()
 
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [contracts, setContracts] = useState<ContractListItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [addContractOpen, setAddContractOpen] = useState(false)
   const [templates, setTemplates] = useState<TemplateListItem[]>([])
@@ -108,6 +118,36 @@ export default function CustomerDetailPage() {
     message.success('客户信息已更新')
   }
 
+  /** 删除客户：确认后级联删除名下全部合同并返回列表 */
+  const handleDeleteCustomer = () => {
+    if (!customer) return
+    const contractCount = contracts.length
+    modal.confirm({
+      title: `确认删除客户「${customer.customer_name}」？`,
+      content:
+        contractCount > 0
+          ? `该客户下现有 ${contractCount} 份合同，删除后将一并删除这些合同及相关协作数据，此操作不可恢复。`
+          : '将删除该客户档案。若之后关联有合同，也会一并删除，此操作不可恢复。',
+      okText: '确认删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        setDeleting(true)
+        try {
+          const result = await deleteCustomer(customerId)
+          message.success(
+            result.deleted_contract_count > 0
+              ? `客户已删除，并删除了 ${result.deleted_contract_count} 份合同`
+              : '客户已删除',
+          )
+          navigate('/customers')
+        } finally {
+          setDeleting(false)
+        }
+      },
+    })
+  }
+
   const contractColumns: ColumnsType<ContractListItem> = [
     {
       title: '合同名称',
@@ -141,28 +181,100 @@ export default function CustomerDetailPage() {
     },
   ]
 
+  /** 手机端客户合同卡片 */
+  const renderContractMobileList = () => (
+    <Spin spinning={loading}>
+      {contracts.length === 0 && !loading ? (
+        <div className="mobile-card-list__empty">
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无合同，请从模板池添加" />
+        </div>
+      ) : (
+        <div className="mobile-card-list">
+          {contracts.map((item) => (
+            <div
+              key={item.id}
+              className="mobile-card-list__item"
+              role="button"
+              tabIndex={0}
+              onClick={() => navigate(`/contracts/${item.id}`)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  navigate(`/contracts/${item.id}`)
+                }
+              }}
+            >
+              <div className="mobile-card-list__head">
+                <DocxIcon size={22} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p className="mobile-card-list__title">{item.contract_name}</p>
+                  <div className="mobile-card-list__meta" style={{ marginTop: 4 }}>
+                    <ContractStatusTag status={item.status} />
+                    <span className="mobile-card-list__value">V{item.current_version_no}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="mobile-card-list__meta">
+                <div className="mobile-card-list__meta-row">
+                  <span className="mobile-card-list__label">编号</span>
+                  <span className="mobile-card-list__value">{item.contract_no}</span>
+                </div>
+                <div className="mobile-card-list__meta-row">
+                  <span className="mobile-card-list__label">创建</span>
+                  <span className="mobile-card-list__value">
+                    {dayjs(item.create_time).format('YYYY-MM-DD HH:mm')}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Spin>
+  )
+
   if (!customer && loading) {
     return <Card loading style={{ maxWidth: 1200, margin: '0 auto' }} />
   }
 
   return (
-    <div className="customer-detail">
+    <div className={`customer-detail${isMobile ? ' customer-detail--mobile' : ''}`}>
       <div className="customer-detail__header">
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/customers')}>
-          返回客户列表
+        <Button
+          type={isMobile ? 'text' : 'default'}
+          icon={<ArrowLeftOutlined />}
+          aria-label="返回客户列表"
+          onClick={() => navigate('/customers')}
+        >
+          {isMobile ? null : '返回客户列表'}
         </Button>
-        <Typography.Title level={4} style={{ margin: 0 }}>
+        <Typography.Title level={4} className="customer-detail__name" ellipsis>
           {customer?.customer_name}
         </Typography.Title>
-        <Button icon={<EditOutlined />} onClick={() => setEditOpen(true)}>
-          编辑客户
-        </Button>
+        <Space wrap size="small">
+          <Button
+            icon={<EditOutlined />}
+            size={isMobile ? 'small' : 'middle'}
+            onClick={() => setEditOpen(true)}
+          >
+            {isMobile ? '编辑' : '编辑客户'}
+          </Button>
+          <Button
+            danger
+            icon={<DeleteOutlined />}
+            size={isMobile ? 'small' : 'middle'}
+            loading={deleting}
+            onClick={handleDeleteCustomer}
+          >
+            {isMobile ? '删除' : '删除客户'}
+          </Button>
+        </Space>
       </div>
 
       <Row gutter={[16, 16]}>
         <Col span={24}>
-          <Card title="客户信息">
-            <Descriptions column={{ xs: 1, sm: 2 }}>
+          <Card title="客户信息" size={isMobile ? 'small' : 'default'}>
+            <Descriptions column={1} size={isMobile ? 'small' : 'default'}>
               <Descriptions.Item label="客户名称">{customer?.customer_name}</Descriptions.Item>
               <Descriptions.Item label="联系电话">{customer?.phone}</Descriptions.Item>
               <Descriptions.Item label="联系地址">{customer?.address || '-'}</Descriptions.Item>
@@ -173,25 +285,42 @@ export default function CustomerDetailPage() {
         <Col span={24}>
           <Card
             title="客户合同"
+            size={isMobile ? 'small' : 'default'}
             extra={
-              <Button type="primary" icon={<FileAddOutlined />} onClick={openAddContract}>
-                添加合同
+              <Button
+                type="primary"
+                icon={<FileAddOutlined />}
+                size={isMobile ? 'small' : 'middle'}
+                onClick={openAddContract}
+              >
+                {isMobile ? '添加' : '添加合同'}
               </Button>
             }
           >
-            <Table
-              rowKey="id"
-              loading={loading}
-              columns={contractColumns}
-              dataSource={contracts}
-              pagination={false}
-              locale={{ emptyText: '暂无合同，请从模板池添加' }}
-            />
+            {isMobile ? (
+              renderContractMobileList()
+            ) : (
+              <Table
+                rowKey="id"
+                loading={loading}
+                columns={contractColumns}
+                dataSource={contracts}
+                pagination={false}
+                locale={{ emptyText: '暂无合同，请从模板池添加' }}
+              />
+            )}
           </Card>
         </Col>
       </Row>
 
-      <Modal title="编辑客户" open={editOpen} onCancel={() => setEditOpen(false)} onOk={handleUpdateCustomer}>
+      <Modal
+        title="编辑客户"
+        open={editOpen}
+        onCancel={() => setEditOpen(false)}
+        onOk={handleUpdateCustomer}
+        width={isMobile ? '100%' : undefined}
+        style={isMobile ? { top: 16, maxWidth: 'calc(100vw - 24px)' } : undefined}
+      >
         <Form form={form} layout="vertical">
           <Form.Item name="customer_name" label="客户名称" rules={[{ required: true }]}>
             <Input />
@@ -222,6 +351,8 @@ export default function CustomerDetailPage() {
         onCancel={() => setAddContractOpen(false)}
         onOk={handleCreateContract}
         destroyOnHidden
+        width={isMobile ? '100%' : undefined}
+        style={isMobile ? { top: 16, maxWidth: 'calc(100vw - 24px)' } : undefined}
       >
         <Form form={contractForm} layout="vertical">
           <Form.Item

@@ -17,6 +17,7 @@ import CollapsibleScrollSection from '../../components/contract/CollapsibleScrol
 import FidelityPdfViewer from '../../components/contract/FidelityPdfViewer'
 import FidelitySnapshotList from '../../components/contract/FidelitySnapshotList'
 import { useFidelitySnapshots } from '../../hooks/useFidelitySnapshots'
+import { useWatermarkSetting } from '../../hooks/useWatermarkSetting'
 import { normalizeDocumentContent, prepareSaveDocumentContent } from '../../utils/documentContent'
 import '../ContractDetail/contract-detail.css'
 import './template-detail.css'
@@ -38,6 +39,7 @@ export default function TemplateDetailPage() {
   const [changeSummary, setChangeSummary] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const { activeText: watermarkText, activeStyle: watermarkStyle } = useWatermarkSetting()
 
   /** 加载模板详情（与合同详情相同：normalizeDocumentContent） */
   const loadData = useCallback(async () => {
@@ -173,6 +175,8 @@ export default function TemplateDetailPage() {
               documentContent={documentContent}
               onChange={handleEditorChange}
               emptyText="该模板暂无文档内容"
+              watermarkText={watermarkText}
+              watermarkStyle={watermarkStyle}
             />
             <div className="contract-detail__save-bar">
               <Input

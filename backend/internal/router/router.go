@@ -21,6 +21,7 @@ func New(
 	shareHandler *handler.ShareHandler,
 	publicHandler *handler.PublicHandler,
 	fidelityHandler *handler.FidelityHandler,
+	settingsHandler *handler.SettingsHandler,
 	internalWSHandler, shareWSHandler gin.HandlerFunc,
 ) *gin.Engine {
 	// 根据环境变量设置 Gin 模式，便于本地 debug / 线上 release 切换
@@ -55,6 +56,23 @@ func New(
 			// 需要登录后携带 JWT 访问
 			authGroup.GET("/me", middleware.JWTAuth(cfg.JWTSecret), authHandler.Me)
 		}
+
+		// 合同设置（用户级）
+		settings := api.Group("/settings", middleware.JWTAuth(cfg.JWTSecret))
+		{
+			settings.GET("/watermark", settingsHandler.GetWatermark)
+			settings.PUT("/watermark", settingsHandler.SaveWatermark)
+			settings.GET("/seals", settingsHandler.ListSeals)
+			settings.POST("/seals", settingsHandler.UploadSeal)
+			settings.PUT("/seals/:id", settingsHandler.UpdateSeal)
+			settings.DELETE("/seals/:id", settingsHandler.DeleteSeal)
+		}
+		// 电子章图片：允许 query token，供 <img> 加载私有 OSS 对象
+		api.GET(
+			"/settings/seals/:id/image",
+			middleware.JWTAuthFlexible(cfg.JWTSecret),
+			settingsHandler.StreamSealImage,
+		)
 
 		// 合同模板池
 		templates := api.Group("/templates", middleware.JWTAuth(cfg.JWTSecret))
@@ -100,6 +118,7 @@ func New(
 			contracts.GET("/:id/versions", contractHandler.VersionList)
 			contracts.GET("/:id/versions/:versionId", contractHandler.VersionDetail)
 			contracts.GET("/:id/changes", contractHandler.ChangeList)
+			contracts.POST("/:id/seals/upload", contractHandler.UploadContractSeal)
 
 			// 分享与确认
 			contracts.POST("/:id/share", shareHandler.CreateShare)
@@ -119,6 +138,12 @@ func New(
 			contracts.GET("/:id/fidelity-snapshots/:snapshotId/pdf", fidelityHandler.StreamContractSnapshotPdf)
 			contracts.POST("/:id/fidelity-snapshots/:snapshotId/rollback", fidelityHandler.RollbackContractSnapshot)
 		}
+		// 合同电子章图片：允许 query token，供 <img> 加载
+		api.GET(
+			"/contracts/:id/seals/image",
+			middleware.JWTAuthFlexible(cfg.JWTSecret),
+			contractHandler.StreamContractSeal,
+		)
 
 		// 外部协作者公开访问（无需 JWT，通过 token 鉴权）
 		share := api.Group("/share")
@@ -130,8 +155,11 @@ func New(
 			share.GET("/:token/versions/:versionId", shareHandler.ShareVersionDetail)
 			share.POST("/:token/versions", shareHandler.ShareSaveVersion)
 			share.GET("/:token/changes", shareHandler.ShareChangeList)
+			share.POST("/:token/seals/upload", shareHandler.UploadShareSeal)
+			share.GET("/:token/seals/image", shareHandler.StreamShareSeal)
 			share.POST("/:token/prepare-final-export", shareHandler.SharePrepareFinalExport)
 			share.POST("/:token/export-pdf", shareHandler.ShareExportPdf)
+			share.GET("/:token/export-pdf", shareHandler.ShareGetExportPdf)
 			share.POST("/:token/confirm", shareHandler.ShareConfirm)
 			share.GET("/:token/confirm-progress", shareHandler.ShareGetConfirmProgress)
 			share.GET("/:token/confirmations", shareHandler.ShareListConfirmations)

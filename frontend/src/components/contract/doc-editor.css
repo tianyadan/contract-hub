@@ -15,6 +15,43 @@
   background: #eceff2;
 }
 
+@media (max-width: 767px) {
+  .doc-editor,
+  .doc-editor--paper {
+    padding: 12px 8px 20px;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .doc-editor__fixed-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 25;
+    max-width: 100%;
+    margin-bottom: 10px;
+    padding: 4px 6px;
+    border-radius: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+  }
+
+  /* 手机弱化浮动工具栏，统一用顶部 sticky 栏 */
+  .doc-editor__floating-toolbar {
+    display: none !important;
+  }
+
+  .doc-editor__hf-hint {
+    max-width: 100%;
+    font-size: 12px;
+  }
+
+  .doc-editor__page-nav .ant-btn {
+    min-width: 48px;
+    min-height: 48px;
+  }
+}
+
 /* 旧数据兼容提示 */
 .doc-editor__legacy-alert {
   margin-bottom: 16px;
@@ -54,6 +91,21 @@
   flex-direction: column;
   align-items: center;
   gap: 24px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* 纸面适配容器：移动端 CSS scale，保持测量/导出分辨率 */
+.doc-editor__page-fit {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.doc-editor__page-fit-inner {
+  flex-shrink: 0;
+  transform-origin: top center;
 }
 
 .doc-editor__pages-loading {
@@ -61,18 +113,14 @@
   color: #8c8c8c;
 }
 
-.contract-export-watermark {
+/* 用户自定义全页防伪水印（视觉参数由 inline style 注入） */
+.doc-page__security-watermark {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 72px;
-  font-weight: 700;
-  color: rgba(0, 0, 0, 0.08);
+  overflow: hidden;
   pointer-events: none;
   user-select: none;
-  z-index: 5;
+  z-index: 6;
 }
 
 .doc-page {
@@ -90,11 +138,32 @@
   top: 0;
   left: 0;
   right: 0;
-  padding: 3px 0;
+  padding: 6px 16px 3px;
   text-align: center;
   font-size: 9px;
   color: #999999;
   pointer-events: none;
+  z-index: 4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.doc-page__header--editable {
+  pointer-events: auto;
+  cursor: text;
+  border-bottom: 1px dashed transparent;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.doc-page__header--editable:hover,
+.doc-page__header--empty {
+  background: rgba(22, 119, 255, 0.04);
+  border-bottom-color: rgba(22, 119, 255, 0.35);
+}
+
+.doc-page__header--empty {
+  color: rgba(22, 119, 255, 0.55);
+  font-size: 11px;
 }
 
 /* 文档自带页脚文案 */
@@ -103,11 +172,32 @@
   bottom: 28px;
   left: 0;
   right: 0;
-  padding: 0 12px;
+  padding: 3px 16px 6px;
   text-align: center;
   font-size: 9px;
   color: #999999;
   pointer-events: none;
+  z-index: 4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.doc-page__footer-text--editable {
+  pointer-events: auto;
+  cursor: text;
+  border-top: 1px dashed transparent;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.doc-page__footer-text--editable:hover,
+.doc-page__footer-text--empty {
+  background: rgba(22, 119, 255, 0.04);
+  border-top-color: rgba(22, 119, 255, 0.35);
+}
+
+.doc-page__footer-text--empty {
+  color: rgba(22, 119, 255, 0.55);
+  font-size: 11px;
 }
 
 /* 纸内页码（进入 PNG） */
@@ -190,11 +280,26 @@
   position: sticky;
   top: 0;
   z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 16px;
+  margin-left: auto;
+  margin-right: auto;
   padding: 8px 12px;
   background: #ffffff;
   border-radius: 8px;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+  max-width: min(760px, 100%);
+}
+
+.doc-editor__hf-btn {
+  flex-shrink: 0;
+}
+
+.doc-editor__hf-hint {
+  margin-bottom: 12px;
   max-width: min(760px, 100%);
   margin-left: auto;
   margin-right: auto;
@@ -305,4 +410,70 @@
 
 .doc-editor--paper .doc-editor__toolbar {
   max-width: 760px;
+}
+
+/* ---------- V3.8 变更定位高亮 ---------- */
+.doc-block--change-focus {
+  position: relative;
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
+  animation: doc-block-change-pulse 1.2s ease-out 1;
+}
+
+@keyframes doc-block-change-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(22, 119, 255, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(22, 119, 255, 0);
+  }
+}
+
+.doc-change-overlay {
+  position: relative;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 0.95em;
+  line-height: 1.55;
+  pointer-events: none;
+  user-select: none;
+  z-index: 3;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px dashed rgba(22, 119, 255, 0.35);
+}
+
+.doc-change-overlay--add {
+  background: rgba(82, 196, 26, 0.08);
+  border-color: rgba(82, 196, 26, 0.45);
+}
+
+.doc-change-overlay--del {
+  background: rgba(255, 77, 79, 0.08);
+  border-color: rgba(255, 77, 79, 0.4);
+}
+
+.doc-change-overlay__tip {
+  font-size: 12px;
+  color: #1677ff;
+  margin-bottom: 2px;
+}
+
+.doc-change-overlay__body {
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.doc-change-del {
+  background: rgba(255, 82, 82, 0.18);
+  text-decoration: line-through;
+  color: #a8071a;
+  border-radius: 2px;
+}
+
+.doc-change-add {
+  background: rgba(82, 196, 26, 0.18);
+  color: #237804;
+  text-decoration: none;
+  border-radius: 2px;
 }

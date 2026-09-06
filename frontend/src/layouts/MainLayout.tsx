@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   App,
   Avatar,
+  Button,
+  Drawer,
   Dropdown,
   Layout,
   Menu,
@@ -17,11 +19,13 @@ import {
   FolderOpenOutlined,
   HomeOutlined,
   LogoutOutlined,
+  MenuOutlined,
   SettingOutlined,
   TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons'
 import BrandLogo from '../components/BrandLogo'
+import { useIsMobile } from '../hooks/useMediaQuery'
 import { clearAuth, getStoredUser } from '../utils/token'
 import './main-layout.css'
 
@@ -33,28 +37,48 @@ const MENU_ITEMS: MenuProps['items'] = [
   { key: '/customers', label: '客户管理', icon: <TeamOutlined /> },
   { key: '/templates', label: '模板池', icon: <FolderOpenOutlined /> },
   { key: '/contracts', label: '合同管理', icon: <FileTextOutlined /> },
-  { key: '/settings', label: '系统设置', icon: <SettingOutlined /> },
+  {
+    key: '/settings',
+    label: '合同设置',
+    icon: <SettingOutlined />,
+    children: [
+      { key: '/settings/watermark', label: '导出水印' },
+      { key: '/settings/seal', label: '电子章' },
+    ],
+  },
   { key: '/statistics', label: '数据统计', icon: <BarChartOutlined /> },
 ]
 
 /**
  * 管理系统主布局。
- * 左侧为可折叠菜单，顶部展示系统名称与当前用户登录状态，右侧为内容区。
+ * 桌面：左侧可折叠菜单；手机：汉堡菜单 + Drawer，内容区全宽。
  */
 export default function MainLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const { message } = App.useApp()
-  // 侧边栏折叠状态
+  const isMobile = useIsMobile()
+  // 桌面侧边栏折叠
   const [collapsed, setCollapsed] = useState(false)
-  // 当前登录用户信息（本地保存）
+  // 手机抽屉导航
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  // 子菜单展开 keys
+  const [openKeys, setOpenKeys] = useState<string[]>(() =>
+    location.pathname.startsWith('/settings') ? ['/settings'] : [],
+  )
   const user = getStoredUser()
   const displayName = user?.nickname || user?.username || '用户'
 
-  // 根据当前路径计算选中的菜单项
+  /** 合同/模板详情：内容区收窄边距，给编辑器更多宽度 */
+  const isEditorRoute =
+    /^\/contracts\/\d+/.test(location.pathname) || /^\/templates\/\d+/.test(location.pathname)
+
   const selectedKey = useMemo(() => {
     const path = location.pathname
     if (path === '/') return '/'
+    if (path.startsWith('/settings')) {
+      return path === '/settings' ? '/settings/watermark' : path
+    }
     const matched = MENU_ITEMS?.find((item) => {
       const key = item?.key as string
       return key !== '/' && path.startsWith(key)
@@ -62,19 +86,30 @@ export default function MainLayout() {
     return (matched?.key as string) ?? '/'
   }, [location.pathname])
 
-  /** 菜单点击：跳转到对应路由 */
+  useEffect(() => {
+    if (location.pathname.startsWith('/settings')) {
+      setOpenKeys((prev) => (prev.includes('/settings') ? prev : [...prev, '/settings']))
+    }
+  }, [location.pathname])
+
+  // 切到桌面时关闭抽屉
+  useEffect(() => {
+    if (!isMobile) setDrawerOpen(false)
+  }, [isMobile])
+
+  /** 菜单点击：跳转并在手机上关闭抽屉 */
   const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
+    if (key === '/settings') return
     navigate(key)
+    if (isMobile) setDrawerOpen(false)
   }
 
-  /** 退出登录：清除登录态并跳回登录页 */
   const handleLogout = () => {
     clearAuth()
     message.success('已退出登录')
     navigate('/login', { replace: true })
   }
 
-  /** 用户下拉菜单项 */
   const userMenuItems: MenuProps['items'] = [
     {
       key: 'logout',
@@ -84,60 +119,93 @@ export default function MainLayout() {
     },
   ]
 
+  /** 侧栏/抽屉内的品牌 + 菜单 */
+  const navBody = (
+    <>
+      <div className="main-layout__brand">
+        <BrandLogo size={34} />
+        {(isMobile || !collapsed) && (
+          <div className="main-layout__brand-text">
+            <div className="main-layout__brand-name">心智协同</div>
+            <div className="main-layout__brand-sub">合同协作系统</div>
+          </div>
+        )}
+      </div>
+      <Menu
+        theme="light"
+        mode="inline"
+        selectedKeys={[selectedKey]}
+        openKeys={openKeys}
+        onOpenChange={setOpenKeys}
+        items={MENU_ITEMS}
+        onClick={handleMenuClick}
+        className="main-layout__menu"
+      />
+    </>
+  )
+
   return (
-    <Layout className="main-layout">
-      {/* 左侧菜单栏 */}
-      <Sider
-        collapsible
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        width={220}
-        className="main-layout__sider"
-      >
-        {/* 顶部品牌区 */}
-        <div className="main-layout__brand">
-          <BrandLogo size={34} />
-          {!collapsed && (
-            <div className="main-layout__brand-text">
-              <div className="main-layout__brand-name">心智协同</div>
-              <div className="main-layout__brand-sub">合同协作系统</div>
-            </div>
-          )}
-        </div>
+    <Layout
+      className={[
+        'main-layout',
+        isMobile ? 'main-layout--mobile' : '',
+        isEditorRoute ? 'main-layout--editor' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {!isMobile ? (
+        <Sider
+          collapsible
+          collapsed={collapsed}
+          onCollapse={setCollapsed}
+          width={220}
+          className="main-layout__sider"
+        >
+          {navBody}
+        </Sider>
+      ) : (
+        <Drawer
+          placement="left"
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          width={280}
+          styles={{ body: { padding: 0 } }}
+          className="main-layout__drawer"
+          title={null}
+          closable={false}
+        >
+          {navBody}
+        </Drawer>
+      )}
 
-        {/* 菜单 */}
-        <Menu
-          theme="light"
-          mode="inline"
-          selectedKeys={[selectedKey]}
-          items={MENU_ITEMS}
-          onClick={handleMenuClick}
-          className="main-layout__menu"
-        />
-      </Sider>
-
-      {/* 右侧区域 */}
       <Layout>
-        {/* 顶部：系统名称 + 用户登录状态 */}
         <Header className="main-layout__header">
-          <Typography.Text className="main-layout__header-title">
-            心智协同合同协作与业务管理系统
-          </Typography.Text>
+          <div className="main-layout__header-left">
+            {isMobile ? (
+              <Button
+                type="text"
+                className="main-layout__menu-btn"
+                icon={<MenuOutlined />}
+                aria-label="打开菜单"
+                onClick={() => setDrawerOpen(true)}
+              />
+            ) : null}
+            {isMobile ? <BrandLogo size={28} /> : null}
+            <Typography.Text className="main-layout__header-title" ellipsis>
+              {isMobile ? '合同协作' : '心智协同合同协作与业务管理系统'}
+            </Typography.Text>
+          </div>
 
           <Space size="small">
-            <Avatar
-              size={32}
-              icon={<UserOutlined />}
-              style={{ backgroundColor: '#00b96b' }}
-            />
-            <span className="main-layout__header-user">{displayName}</span>
+            <Avatar size={32} icon={<UserOutlined />} style={{ backgroundColor: '#00b96b' }} />
+            {!isMobile ? <span className="main-layout__header-user">{displayName}</span> : null}
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
               <DownOutlined className="main-layout__header-caret" />
             </Dropdown>
           </Space>
         </Header>
 
-        {/* 内容区 */}
         <Content className="main-layout__content">
           <Outlet />
         </Content>

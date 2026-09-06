@@ -102,13 +102,40 @@ export function getShareVersionDetail(
 export function saveShareVersion(
   token: string,
   name: string,
-  data: { document_content: DocumentContent; change_summary: string },
-): Promise<{ version_id: number; version_no: number; change_count: number }> {
-  return requestTyped<{ version_id: number; version_no: number; change_count: number }>({
+  data: {
+    document_content: DocumentContent
+    change_summary: string
+    base_version_id?: number
+  },
+): Promise<{ version_id: number; version_no: number; change_count: number; auto_merged?: boolean }> {
+  return requestTyped<{
+    version_id: number
+    version_no: number
+    change_count: number
+    auto_merged?: boolean
+  }>({
     url: `/share/${token}/versions`,
     method: 'post',
     params: withName(name),
     data,
+    skipErrorToast: true,
+  })
+}
+
+/** 外部分享上传合同级电子章 */
+export function uploadShareSeal(
+  token: string,
+  name: string,
+  file: File,
+): Promise<{ oss_key: string; mime_type: string }> {
+  const form = new FormData()
+  form.append('file', file)
+  return requestTyped<{ oss_key: string; mime_type: string }>({
+    url: `/share/${token}/seals/upload`,
+    method: 'post',
+    params: withName(name),
+    data: form,
+    headers: { 'Content-Type': 'multipart/form-data' },
   })
 }
 
@@ -210,6 +237,18 @@ export function uploadShareExportPdf(
     data: formData,
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 120000,
+  })
+}
+
+/** 获取分享合同当前版本已归档终稿 PDF（含验真二维码） */
+export function getShareExportPdf(
+  token: string,
+  name: string,
+): Promise<import('./contractApi').ContractExportPdfInfo> {
+  return requestTyped({
+    url: `/share/${token}/export-pdf`,
+    method: 'get',
+    params: withName(name),
   })
 }
 

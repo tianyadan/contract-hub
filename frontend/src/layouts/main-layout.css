@@ -68,10 +68,19 @@
   border-bottom: 1px solid #f0f0f0;
 }
 
+.main-layout__header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
 .main-layout__header-title {
   font-size: 16px;
   font-weight: 600;
   color: #1f2937;
+  max-width: min(560px, 70vw);
 }
 
 .main-layout__header-user {
@@ -90,8 +99,43 @@
   color: #00a36a;
 }
 
+.main-layout__menu-btn {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  color: #1f2937;
+  font-size: 18px;
+}
+
 /* 内容区 */
 .main-layout__content {
   padding: 24px;
   overflow: auto;
+}
+
+/* 抽屉导航 */
+.main-layout__drawer .ant-drawer-body {
+  padding: 0;
+}
+
+/* ---------- 手机端（≤767）：无侧栏，全宽内容 ---------- */
+@media (max-width: 767px) {
+  .main-layout--mobile .main-layout__header {
+    height: 52px;
+    padding: 0 10px 0 6px;
+  }
+
+  .main-layout--mobile .main-layout__header-title {
+    font-size: 15px;
+    max-width: 48vw;
+  }
+
+  .main-layout--mobile .main-layout__content {
+    padding: 12px;
+  }
+
+  /* 编辑页进一步收边距，给纸面更多宽度 */
+  .main-layout--mobile.main-layout--editor .main-layout__content {
+    padding: 8px 8px 12px;
+  }
 }

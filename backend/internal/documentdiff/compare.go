@@ -82,7 +82,115 @@ func Compare(oldDoc, newDoc *DocumentContent) []Record {
 		records = append(records, compareBlock(oldBlock, newBlock)...)
 	}
 
+	records = append(records, compareSeals(oldDoc.Seals, newDoc.Seals)...)
+
 	return records
+}
+
+// compareSeals 对比电子章增删改，写入编辑记录。
+func compareSeals(oldSeals, newSeals []DocumentSeal) []Record {
+	oldMap := indexSeals(oldSeals)
+	newMap := indexSeals(newSeals)
+	oldIDs := sortedSealKeys(oldMap)
+	newIDs := sortedSealKeys(newMap)
+	records := make([]Record, 0)
+
+	for _, id := range newIDs {
+		if _, ok := oldMap[id]; !ok {
+			s := newMap[id]
+			records = append(records, Record{
+				ChangeType:   0,
+				BlockID:      "seal:" + id,
+				NewContent:   sealPreview(s),
+				ChangeReason: fmt.Sprintf("新增电子章（第%d页）", s.PageIndex+1),
+				Subtype:      "seal",
+			})
+		}
+	}
+	for _, id := range oldIDs {
+		if _, ok := newMap[id]; !ok {
+			s := oldMap[id]
+			records = append(records, Record{
+				ChangeType:   1,
+				BlockID:      "seal:" + id,
+				OldContent:   sealPreview(s),
+				ChangeReason: fmt.Sprintf("删除电子章（第%d页）", s.PageIndex+1),
+				Subtype:      "seal",
+			})
+		}
+	}
+	for _, id := range newIDs {
+		o, okO := oldMap[id]
+		n, okN := newMap[id]
+		if !okO || !okN {
+			continue
+		}
+		if sealsEqual(o, n) {
+			continue
+		}
+		records = append(records, Record{
+			ChangeType:   2,
+			BlockID:      "seal:" + id,
+			OldContent:   sealPreview(o),
+			NewContent:   sealPreview(n),
+			ChangeReason: fmt.Sprintf("调整电子章（第%d页→第%d页）", o.PageIndex+1, n.PageIndex+1),
+			Subtype:      "seal",
+		})
+	}
+	return records
+}
+
+func indexSeals(seals []DocumentSeal) map[string]*DocumentSeal {
+	m := make(map[string]*DocumentSeal, len(seals))
+	for i := range seals {
+		s := &seals[i]
+		id := strings.TrimSpace(s.ID)
+		if id == "" {
+			continue
+		}
+		m[id] = s
+	}
+	return m
+}
+
+func sortedSealKeys(m map[string]*DocumentSeal) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sealsEqual(a, b *DocumentSeal) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.OssKey == b.OssKey &&
+		a.PageIndex == b.PageIndex &&
+		approxEqual(a.XRatio, b.XRatio) &&
+		approxEqual(a.YRatio, b.YRatio) &&
+		approxEqual(a.Scale, b.Scale) &&
+		approxEqual(a.Rotate, b.Rotate)
+}
+
+func approxEqual(a, b float64) bool {
+	d := a - b
+	if d < 0 {
+		d = -d
+	}
+	return d < 0.0001
+}
+
+func sealPreview(s *DocumentSeal) string {
+	if s == nil {
+		return ""
+	}
+	who := s.PlacedBy
+	if who == "" {
+		who = "unknown"
+	}
+	return truncate(fmt.Sprintf("第%d页 · %s · scale=%.2f", s.PageIndex+1, who, s.Scale), maxContentLen)
 }
 
 func compareBlock(oldBlock, newBlock *DocumentBlock) []Record {

@@ -29,7 +29,9 @@ import { CONTRACT_STATUS_CONFIG, CONTRACT_STATUS_ORDER } from '../../utils/contr
 import ContractStatusTag from '../../components/ContractStatusTag'
 import DocxIcon from '../../components/DocxIcon'
 import StatCard from '../../components/StatCard'
+import { useIsMobile } from '../../hooks/useMediaQuery'
 import { getStoredUser } from '../../utils/token'
+import '../../styles/mobile-list.css'
 import './home.css'
 
 /** 各状态对应的统计图标 */
@@ -49,6 +51,7 @@ const STATUS_ICONS: Record<number, React.ReactNode> = {
 export default function HomePage() {
   const navigate = useNavigate()
   const { message } = App.useApp()
+  const isMobile = useIsMobile()
   // 合同列表数据（一次拉取最多 100 条，前端统计与排序）
   const [contracts, setContracts] = useState<ContractListItem[]>([])
   const [customerTotal, setCustomerTotal] = useState(0)
@@ -65,7 +68,6 @@ export default function HomePage() {
       dataIndex: 'contract_name',
       key: 'contract_name',
       ellipsis: true,
-      // 合同名称前加 DOCX 图标，点击进入详情页
       render: (name: string, record) => (
         <div className="home-recent__name">
           <DocxIcon size={20} />
@@ -87,7 +89,6 @@ export default function HomePage() {
       dataIndex: 'update_time',
       key: 'update_time',
       width: 180,
-      // 时间格式化为 YYYY-MM-DD HH:mm
       render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm'),
     },
     {
@@ -124,7 +125,6 @@ export default function HomePage() {
         }
       })
       .catch(() => {
-        // 错误提示已在请求拦截器统一处理
         if (!cancelled) message.error('合同数据加载失败，请稍后重试')
       })
       .finally(() => {
@@ -151,21 +151,64 @@ export default function HomePage() {
       .slice(0, 6)
   }, [contracts])
 
+  /** 手机端最近合同卡片列表 */
+  const renderRecentMobile = () => (
+    <div className="mobile-card-list">
+      {recentContracts.map((item) => (
+        <div
+          key={item.id}
+          className="mobile-card-list__item"
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate(`/contracts/${item.id}`)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              navigate(`/contracts/${item.id}`)
+            }
+          }}
+        >
+          <div className="mobile-card-list__head">
+            <DocxIcon size={22} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p className="mobile-card-list__title">{item.contract_name}</p>
+              <div className="mobile-card-list__meta" style={{ marginTop: 4 }}>
+                <ContractStatusTag status={item.status} />
+              </div>
+            </div>
+          </div>
+          <div className="mobile-card-list__meta">
+            <div className="mobile-card-list__meta-row">
+              <span className="mobile-card-list__label">客户</span>
+              <span className="mobile-card-list__value">{item.customer_name || '-'}</span>
+            </div>
+            <div className="mobile-card-list__meta-row">
+              <span className="mobile-card-list__label">更新</span>
+              <span className="mobile-card-list__value">
+                {dayjs(item.update_time).format('YYYY-MM-DD HH:mm')}
+              </span>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+
   return (
-    <div className="home">
-      {/* 页面标题 */}
+    <div className={`home${isMobile ? ' home--mobile' : ''}`}>
       <div className="home__header">
         <div>
-          <Typography.Title level={3} style={{ marginBottom: 4 }}>
+          <Typography.Title level={isMobile ? 4 : 3} style={{ marginBottom: 4 }}>
             首页
           </Typography.Title>
           <Typography.Text type="secondary">
-            你好，{displayName}，欢迎回到心智协同合同协作系统
+            {isMobile
+              ? `你好，${displayName}`
+              : `你好，${displayName}，欢迎回到心智协同合同协作系统`}
           </Typography.Text>
         </div>
       </div>
 
-      {/* 业务概览 */}
       <div className="home__stats home__stats--overview">
         <StatCard
           title="客户总数"
@@ -185,9 +228,7 @@ export default function HomePage() {
         />
       </div>
 
-      {/* 合同数量统计卡片 */}
       <div className="home__stats">
-        {/* 合同总数（品牌渐变卡片，点击进入合同列表） */}
         <StatCard
           featured
           title="合同总数"
@@ -197,7 +238,6 @@ export default function HomePage() {
           icon={<FileTextOutlined />}
           onClick={() => goContractListByStatus()}
         />
-        {/* 各状态数量卡片（点击按状态筛选合同列表） */}
         {CONTRACT_STATUS_ORDER.map((status) => {
           const config = CONTRACT_STATUS_CONFIG[status]
           return (
@@ -214,7 +254,6 @@ export default function HomePage() {
         })}
       </div>
 
-      {/* 最近合同区域 */}
       <Card
         className="home__recent"
         title={
@@ -224,20 +263,18 @@ export default function HomePage() {
           </span>
         }
         extra={
-          <Typography.Link onClick={() => navigate('/contracts')}>
-            查看全部
-          </Typography.Link>
+          <Typography.Link onClick={() => navigate('/contracts')}>查看全部</Typography.Link>
         }
       >
         {loading ? (
-          // 加载中骨架屏
           <Skeleton active paragraph={{ rows: 4 }} />
         ) : recentContracts.length === 0 ? (
-          // 空数据状态
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             description="暂无合同，去合同管理页创建合同吧"
           />
+        ) : isMobile ? (
+          renderRecentMobile()
         ) : (
           <Table<ContractListItem>
             rowKey="id"

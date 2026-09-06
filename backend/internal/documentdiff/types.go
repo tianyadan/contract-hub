@@ -3,6 +3,19 @@ package documentdiff
 // DocumentContent 与前端 V3 document_content 对齐（diff 所需字段）。
 type DocumentContent struct {
 	Blocks []DocumentBlock `json:"blocks"`
+	Seals  []DocumentSeal  `json:"seals"`
+}
+
+// DocumentSeal 合同纸面电子章（diff 用）。
+type DocumentSeal struct {
+	ID        string  `json:"id"`
+	OssKey    string  `json:"oss_key"`
+	PageIndex int     `json:"page_index"`
+	XRatio    float64 `json:"x_ratio"`
+	YRatio    float64 `json:"y_ratio"`
+	Scale     float64 `json:"scale"`
+	Rotate    float64 `json:"rotate"`
+	PlacedBy  string  `json:"placed_by"`
 }
 
 // DocumentBlock 文档块。

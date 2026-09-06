@@ -39,3 +39,15 @@
   color: #8c8c8c;
   flex-shrink: 0;
 }
+
+@media (max-width: 767px) {
+  .home--mobile .home__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .home--mobile .home__header {
+    margin-bottom: 14px;
+  }
+}

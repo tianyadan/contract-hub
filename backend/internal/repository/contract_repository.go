@@ -3,12 +3,16 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
 
 	"github.com/lshc/contract-hub/backend/internal/model"
 )
+
+// ErrVersionCASFailed 并发保存时 current_version_id 已变化。
+var ErrVersionCASFailed = errors.New("version cas failed")
 
 // ContractRepository 负责合同相关表的数据访问。
 type ContractRepository struct {
@@ -640,13 +644,15 @@ func (r *ContractRepository) ListVersions(ctx context.Context, contractID int64,
 	return versions, nil
 }
 
-// CreateVersionWithChanges 在事务中创建新版本、更新合同当前版本、写入变更记录和审计日志。
+// CreateVersionWithChanges 在事务中创建新版本、乐观更新合同当前版本、写入变更记录和审计日志。
+// expectedCurrentVersionID 为保存前所基于的当前版本 ID；0 表示合同尚无版本。
 func (r *ContractRepository) CreateVersionWithChanges(
 	ctx context.Context,
 	contractID int64,
 	version *model.ContractVersion,
 	changes []model.ContractChange,
 	audit *model.ContractAuditLog,
+	expectedCurrentVersionID int64,
 ) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -663,21 +669,37 @@ func (r *ContractRepository) CreateVersionWithChanges(
 			document_content, change_summary, create_time
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, version.ID, version.ContractID, version.VersionNo, version.CreatedBy,
-		version.CollaboratorID, nil,
+		version.CollaboratorID, version.SourceVersionID,
 		version.OssObjectKey, version.OssURL, version.FileName, version.FileSize, version.FileHash,
 		nullString(version.DocumentContent), nullString(version.ChangeSummary), version.CreateTime)
 	if err != nil {
 		return err
 	}
 
-	// 2. 更新合同当前版本
-	_, err = tx.ExecContext(ctx, `
-		UPDATE contract
-		SET current_version_id = ?, current_version_no = ?
-		WHERE id = ?
-	`, version.ID, version.VersionNo, contractID)
+	// 2. 乐观更新合同当前版本（CAS：防止并发保存互相覆盖）
+	var res sql.Result
+	if expectedCurrentVersionID > 0 {
+		res, err = tx.ExecContext(ctx, `
+			UPDATE contract
+			SET current_version_id = ?, current_version_no = ?
+			WHERE id = ? AND current_version_id = ?
+		`, version.ID, version.VersionNo, contractID, expectedCurrentVersionID)
+	} else {
+		res, err = tx.ExecContext(ctx, `
+			UPDATE contract
+			SET current_version_id = ?, current_version_no = ?
+			WHERE id = ? AND current_version_id IS NULL
+		`, version.ID, version.VersionNo, contractID)
+	}
 	if err != nil {
 		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrVersionCASFailed
 	}
 
 	// 3. 插入变更记录
@@ -970,6 +992,29 @@ func scanVersion(row *sql.Row) (*model.ContractVersion, error) {
 	return &v, nil
 }
 
+// ListIDsByCustomerAndOwner 查询指定客户、归属当前用户的全部合同 ID。
+func (r *ContractRepository) ListIDsByCustomerAndOwner(ctx context.Context, customerID, ownerUserID int64) ([]int64, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id FROM contract
+		WHERE customer_id = ? AND owner_user_id = ?
+		ORDER BY id ASC
+	`, customerID, ownerUserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // buildContractWhere 根据过滤条件拼接 WHERE 和参数，条件统一参数化，避免 SQL 注入。
 func buildContractWhere(filter ContractListFilter) (string, []interface{}) {
 	var sb strings.Builder
@@ -1042,4 +1087,56 @@ func int64SliceToArgs(values []int64) []interface{} {
 		args = append(args, value)
 	}
 	return args
+}
+
+// StripSealsFromAllVersions 清除合同全部版本 JSON 中的 seals 字段。
+func (r *ContractRepository) StripSealsFromAllVersions(ctx context.Context, contractID int64) error {
+	rows, err := r.db.QueryContext(ctx, `
+SELECT id, document_content FROM contract_version WHERE contract_id = ?
+`, contractID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type pair struct {
+		id   int64
+		json string
+	}
+	var items []pair
+	for rows.Next() {
+		var id int64
+		var raw sql.NullString
+		if err := rows.Scan(&id, &raw); err != nil {
+			return err
+		}
+		if !raw.Valid || raw.String == "" {
+			continue
+		}
+		items = append(items, pair{id: id, json: raw.String})
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, item := range items {
+		var doc map[string]interface{}
+		if err := json.Unmarshal([]byte(item.json), &doc); err != nil {
+			continue
+		}
+		if _, ok := doc["seals"]; !ok {
+			continue
+		}
+		delete(doc, "seals")
+		next, err := json.Marshal(doc)
+		if err != nil {
+			continue
+		}
+		if _, err := r.db.ExecContext(ctx, `
+UPDATE contract_version SET document_content = ? WHERE id = ? AND contract_id = ?
+`, string(next), item.id, contractID); err != nil {
+			return err
+		}
+	}
+	return nil
 }

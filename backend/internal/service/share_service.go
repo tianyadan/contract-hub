@@ -4,15 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
 	"github.com/lshc/contract-hub/backend/internal/collab"
 	"github.com/lshc/contract-hub/backend/internal/docengine"
-	"github.com/lshc/contract-hub/backend/internal/documentdiff"
 	"github.com/lshc/contract-hub/backend/internal/model"
 	"github.com/lshc/contract-hub/backend/internal/oss"
 	"github.com/lshc/contract-hub/backend/internal/repository"
@@ -33,12 +30,13 @@ var (
 
 // ShareService 分享链接、外部协作者和确认业务逻辑。
 type ShareService struct {
-	shares      *repository.ShareRepository
-	contracts   *repository.ContractRepository
-	docEngine   *docengine.Client
-	oss         *oss.Client
-	contractSvc *ContractService
-	broadcaster collab.Broadcaster
+	shares       *repository.ShareRepository
+	contracts    *repository.ContractRepository
+	docEngine    *docengine.Client
+	oss          *oss.Client
+	contractSvc  *ContractService
+	watermarkSvc *WatermarkService
+	broadcaster  collab.Broadcaster
 }
 
 // NewShareService 创建分享服务。
@@ -48,13 +46,15 @@ func NewShareService(
 	docEngine *docengine.Client,
 	ossClient *oss.Client,
 	contractSvc *ContractService,
+	watermarkSvc *WatermarkService,
 ) *ShareService {
 	return &ShareService{
-		shares:      shares,
-		contracts:   contracts,
-		docEngine:   docEngine,
-		oss:         ossClient,
-		contractSvc: contractSvc,
+		shares:       shares,
+		contracts:    contracts,
+		docEngine:    docEngine,
+		oss:          ossClient,
+		contractSvc:  contractSvc,
+		watermarkSvc: watermarkSvc,
 	}
 }
 
@@ -105,6 +105,8 @@ type ShareContractVO struct {
 	CurrentVersionNo int                    `json:"current_version_no"`
 	DocumentContent  map[string]interface{} `json:"document_content"`
 	Permission       int8                   `json:"permission"`
+	// Watermark 合同所有者的导出水印设置（分享页展示与导出叠加）
+	Watermark *WatermarkSettingVO `json:"watermark,omitempty"`
 }
 
 // CollaboratorVO 协作者返回。
@@ -274,6 +276,15 @@ func (s *ShareService) GetShareContract(ctx context.Context, token, name string)
 		doc = map[string]interface{}{}
 	}
 
+	// 附带合同所有者水印，供外部分享页展示与 PDF 导出
+	var watermark *WatermarkSettingVO
+	if s.watermarkSvc != nil {
+		wm, err := s.watermarkSvc.Get(ctx, contract.OwnerUserID)
+		if err == nil {
+			watermark = wm
+		}
+	}
+
 	return &ShareContractVO{
 		ContractID:       contract.ID,
 		ContractNo:       contract.ContractNo,
@@ -289,6 +300,7 @@ func (s *ShareService) GetShareContract(ctx context.Context, token, name string)
 		CurrentVersionNo: contract.CurrentVersionNo,
 		DocumentContent:  doc,
 		Permission:       share.Permission,
+		Watermark:        watermark,
 	}, nil
 }
 
@@ -408,8 +420,15 @@ func (s *ShareService) ShareChangeList(ctx context.Context, token, name string, 
 	return &result, nil
 }
 
-// ShareSaveVersion 外部协作者保存新版本（含块级/样式 diff）。
-func (s *ShareService) ShareSaveVersion(ctx context.Context, token, name string, documentContent map[string]interface{}, changeSummary, ip, userAgent string) (*SaveVersionResult, error) {
+// ShareSaveVersion 外部协作者保存新版本（乐观锁 + 块级三方合并）。
+func (s *ShareService) ShareSaveVersion(
+	ctx context.Context,
+	token, name string,
+	documentContent map[string]interface{},
+	changeSummary string,
+	baseVersionID int64,
+	ip, userAgent string,
+) (*SaveVersionResult, error) {
 	share, contract, err := s.validateShare(ctx, token)
 	if err != nil {
 		return nil, err
@@ -425,13 +444,15 @@ func (s *ShareService) ShareSaveVersion(ctx context.Context, token, name string,
 		return nil, err
 	}
 
-	now := time.Now()
-	fromVersionID := int64(0)
+	normalizeWebCanvasDocument(documentContent)
+	normalizeDocumentSeals(documentContent, contract.ID)
+
+	currentVersionID := int64(0)
 	oldDocJSON := ""
 	var previousVersion *model.ContractVersion
 	if contract.CurrentVersionID != nil {
-		fromVersionID = *contract.CurrentVersionID
-		currentVersion, err := s.contracts.GetVersionByID(ctx, contract.ID, fromVersionID)
+		currentVersionID = *contract.CurrentVersionID
+		currentVersion, err := s.contracts.GetVersionByID(ctx, contract.ID, currentVersionID)
 		if err != nil {
 			return nil, err
 		}
@@ -441,70 +462,50 @@ func (s *ShareService) ShareSaveVersion(ctx context.Context, token, name string,
 		}
 	}
 
-	normalizeWebCanvasDocument(documentContent)
+	docToSave := documentContent
+	autoMerged := false
+	baseID := baseVersionID
 
-	diffRecords, err := documentdiff.CompareJSON(oldDocJSON, documentContent)
-	if err != nil {
-		return nil, fmt.Errorf("compare document versions: %w", err)
+	if baseID > 0 && currentVersionID > 0 && baseID != currentVersionID {
+		merged, conflictErr := s.contractSvc.buildVersionConflictOrMerge(
+			ctx, contract.ID, baseID, currentVersionID, contract.CurrentVersionNo, documentContent, oldDocJSON,
+		)
+		if conflictErr != nil {
+			return nil, conflictErr
+		}
+		docToSave = merged
+		autoMerged = true
+		normalizeWebCanvasDocument(docToSave)
+		normalizeDocumentSeals(docToSave, contract.ID)
+	} else if baseID == 0 && currentVersionID > 0 {
+		baseID = currentVersionID
 	}
-
-	newVersionNo := contract.CurrentVersionNo + 1
-	newVersionID := nextID()
-	newDocJSON, err := json.Marshal(documentContent)
-	if err != nil {
-		return nil, err
-	}
+	normalizeDocumentSeals(docToSave, contract.ID)
 
 	collaboratorID := collaborator.ID
-	version := &model.ContractVersion{
-		ID:              newVersionID,
-		ContractID:      contract.ID,
-		VersionNo:       newVersionNo,
-		CreatedBy:       0,
-		CollaboratorID:  &collaboratorID,
-		DocumentContent: string(newDocJSON),
-		ChangeSummary:   strings.TrimSpace(changeSummary),
-		CreateTime:      now,
-	}
-	inheritVersionFileMeta(version, previousVersion)
-
-	audit := &model.ContractAuditLog{
-		ID:             nextID(),
-		ContractID:     contract.ID,
-		CollaboratorID: &collaboratorID,
-		OperatorName:   collaborator.Name,
-		OperationType:  "CREATE_VERSION",
-		OperationDesc:  fmt.Sprintf("外部协作者 %s 创建合同版本 V%d", collaborator.Name, newVersionNo),
-		VersionID:      newVersionID,
-		IPAddress:      ip,
-		UserAgent:      userAgent,
-		CreateTime:     now,
-	}
-
-	changes := buildContractChangesFromDiff(
-		contract.ID, fromVersionID, newVersionID, 0, &collaboratorID, diffRecords, now,
-	)
-
-	if err := s.contracts.CreateVersionWithChanges(ctx, contract.ID, version, changes, audit); err != nil {
+	result, err := s.contractSvc.persistNewVersion(ctx, persistVersionParams{
+		ContractID:        contract.ID,
+		UserID:            0,
+		CollaboratorID:    &collaboratorID,
+		OperatorName:      collaborator.Name,
+		DocumentContent:   docToSave,
+		OldDocJSON:        oldDocJSON,
+		ExpectedCurrentID: currentVersionID,
+		CurrentVersionNo:  contract.CurrentVersionNo,
+		SourceVersionID:   baseID,
+		ChangeSummary:     changeSummary,
+		ClientIP:          ip,
+		UserAgent:         userAgent,
+		PreviousVersion:   previousVersion,
+		SavedByRole:       "collaborator",
+		AutoMerged:        autoMerged,
+	})
+	if err != nil {
 		return nil, err
 	}
 
 	_ = s.contracts.UpdateContractStatus(ctx, contract.ID, 2)
-
-	s.broadcastVersionSaved(contract.ID, collab.VersionSavedPayload{
-		VersionID:   newVersionID,
-		VersionNo:   newVersionNo,
-		SavedBy:     collaborator.Name,
-		SavedByRole: "collaborator",
-	})
-
-	return &SaveVersionResult{
-		ContractID:  contract.ID,
-		VersionID:   newVersionID,
-		VersionNo:   newVersionNo,
-		ChangeCount: len(changes),
-		CreateTime:  now,
-	}, nil
+	return result, nil
 }
 
 // ConfirmWithPdf 内部用户确认当前版本（双方确认满足后归档 PDF）。
@@ -649,6 +650,18 @@ func (s *ShareService) ShareUploadExportPdf(
 		return nil, err
 	}
 	return s.contractSvc.UploadExportPdfByContract(ctx, contract.ID, pdfData, hash, pageCount, verifyCode, draft)
+}
+
+// ShareGetExportPdf 外部协作者获取当前版本已归档终稿 PDF（含验真二维码）。
+func (s *ShareService) ShareGetExportPdf(ctx context.Context, token, name string) (*ExportPdfInfo, error) {
+	_, contract, err := s.validateShare(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.getCollaborator(ctx, contract.ID, name); err != nil {
+		return nil, err
+	}
+	return s.contractSvc.GetExportPdfByContract(ctx, contract.ID)
 }
 
 // ListConfirmations 查询确认记录（内部用户，带 owner 权限校验）。

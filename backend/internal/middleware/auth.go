@@ -35,6 +35,34 @@ func JWTAuth(secret string) gin.HandlerFunc {
 	}
 }
 
+// JWTAuthFlexible 允许 Header Bearer 或 query token（供 <img src> 加载私有资源）。
+func JWTAuthFlexible(secret string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenString := ""
+		header := c.GetHeader("Authorization")
+		if strings.HasPrefix(header, "Bearer ") {
+			tokenString = strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+		}
+		if tokenString == "" {
+			tokenString = strings.TrimSpace(c.Query("token"))
+		}
+		if tokenString == "" {
+			response.Error(c, http.StatusUnauthorized, 40101, "未登录或 token 缺失")
+			c.Abort()
+			return
+		}
+		claims, err := auth.ParseToken(tokenString, secret)
+		if err != nil {
+			response.Error(c, http.StatusUnauthorized, 40101, "登录状态已失效，请重新登录")
+			c.Abort()
+			return
+		}
+		c.Set("user_id", claims.UserID)
+		c.Set("username", claims.Username)
+		c.Next()
+	}
+}
+
 // GetUserID 从 Gin Context 获取当前登录用户 ID。
 func GetUserID(c *gin.Context) int64 {
 	v, exists := c.Get("user_id")

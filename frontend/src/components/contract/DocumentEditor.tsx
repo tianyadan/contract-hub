@@ -10,14 +10,18 @@ import {
   forwardRef,
 } from 'react'
 import { flushSync } from 'react-dom'
-import { Alert, Empty } from 'antd'
+import { Alert, App, Button, Empty, Popover, Space, Typography } from 'antd'
+import { AuditOutlined, FormOutlined } from '@ant-design/icons'
 import type { CSSProperties, ReactNode } from 'react'
 import type {
   BlockStyle,
   DocumentBlock,
   DocumentContent,
   DocumentRun,
+  DocumentSeal,
 } from '../../types/contract'
+import { listSealAssets, type SealAsset } from '../../api/settingsApi'
+import { sealProxyImageUrl, type SealDisplayContext } from '../../utils/sealUrl'
 import { highlightNameToHex } from '../../utils/contract'
 import {
   applyLivePageOverflowBreaks,
@@ -29,7 +33,17 @@ import {
 } from '../../utils/paginateDocument'
 import FormatToolbar from './FormatToolbar'
 import PageNavigator from './PageNavigator'
+import DocumentWatermark from './DocumentWatermark'
+import DocumentSealLayer from './DocumentSealLayer'
+import ChangeDiffOverlay from './ChangeDiffOverlay'
+import HeaderFooterSettingsModal, {
+  type HeaderFooterSaveValue,
+} from './HeaderFooterSettingsModal'
+import type { ChangeHighlightState } from './changeHighlightTypes'
+import { chromeTextStyle } from '../../utils/chromeTextStyle'
 import './doc-editor.css'
+
+export type { ChangeHighlightState } from './changeHighlightTypes'
 
 /** pt 转 px（1pt = 1/72 英寸，96dpi） */
 const ptToPx = (pt: number) => (pt / 72) * 96
@@ -308,14 +322,56 @@ function restoreTextSelectionInBlock(
   const offsets = findDomTextOffsets(host, start, end)
   if (!offsets) return false
 
-  unifiedEl.focus()
+  // preventScroll：避免 focus 把页面滚回编辑区顶部
+  unifiedEl.focus({ preventScroll: true })
   const range = document.createRange()
   range.setStart(offsets.startNode, offsets.startOffset)
   range.setEnd(offsets.endNode, offsets.endOffset)
   const sel = window.getSelection()
   sel?.removeAllRanges()
   sel?.addRange(range)
+  blockEl.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   return true
+}
+
+/**
+ * 聚焦编辑器并恢复光标到指定块，且不把窗口/滚动容器拽到顶部。
+ * 回车拆段后会重挂载 contentEditable，默认 focus() 会滚动到编辑区顶端。
+ */
+function focusEditorBlockWithoutPageJump(
+  unifiedEl: HTMLElement,
+  blockEl: HTMLElement,
+  collapseToEnd = true,
+): void {
+  const scrollParents: { el: Element; top: number; left: number }[] = []
+  let node: Element | null = unifiedEl.parentElement
+  while (node) {
+    const style = window.getComputedStyle(node)
+    const overflowY = style.overflowY
+    if (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') {
+      scrollParents.push({ el: node, top: node.scrollTop, left: node.scrollLeft })
+    }
+    node = node.parentElement
+  }
+  const winX = window.scrollX
+  const winY = window.scrollY
+
+  unifiedEl.focus({ preventScroll: true })
+  const range = document.createRange()
+  const textNode = blockEl.querySelector('[data-formula-text]') ?? blockEl
+  range.selectNodeContents(textNode)
+  range.collapse(collapseToEnd)
+  const sel = window.getSelection()
+  sel?.removeAllRanges()
+  sel?.addRange(range)
+
+  // 先还原 focus 可能造成的滚动跳动，再仅在必要时微调到光标块附近
+  for (const parent of scrollParents) {
+    parent.el.scrollTop = parent.top
+    parent.el.scrollLeft = parent.left
+  }
+  window.scrollTo(winX, winY)
+  blockEl.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }
 
 /** 将 React 样式对象写入 DOM 元素 */
@@ -461,7 +517,13 @@ function newBlockId(): string {
 function readTextBlockContent(el: HTMLElement): string {
   const textHost = el.querySelector<HTMLElement>('[data-formula-text]')
   if (textHost) return textHost.textContent ?? ''
-  return el.textContent ?? ''
+  // 排除变更高亮覆盖层，避免 Diff 文案写回 document_content
+  if (!el.querySelector('[data-change-overlay]')) {
+    return el.textContent ?? ''
+  }
+  const clone = el.cloneNode(true) as HTMLElement
+  clone.querySelectorAll('[data-change-overlay]').forEach((n) => n.remove())
+  return clone.textContent ?? ''
 }
 
 function readTableRows(tableEl: HTMLTableElement): string[][] {
@@ -519,6 +581,12 @@ export interface DocumentEditorHandle {
   getCurrentPage: () => number
   /** 跳转到指定页（越界时钳制） */
   setCurrentPage: (pageIndex: number) => void
+  /** 跳转到包含该 block 的页并滚动到块；找不到返回 false */
+  jumpToBlock: (blockId: string) => Promise<boolean>
+  /** 设置/清除当前变更高亮（Git 风格） */
+  setChangeHighlight: (state: ChangeHighlightState | null) => void
+  /** 查询 block 当前所在页（0-based，找不到 -1） */
+  getPageIndexForBlock: (blockId: string) => number
 }
 
 interface DocumentEditorProps {
@@ -526,6 +594,38 @@ interface DocumentEditorProps {
   onChange?: (content: DocumentContent) => void
   readOnly?: boolean
   emptyText?: string
+  /** 用户自定义防伪水印文案；有值时在纸面与导出页展示 */
+  watermarkText?: string | null
+  /** 水印视觉参数（密度/字号/倾斜/透明度） */
+  watermarkStyle?: {
+    density: number
+    fontSize: number
+    rotate: number
+    opacity: number
+  } | null
+  /**
+   * 是否允许编辑页眉页脚（仅内部合同编辑页开启；
+   * 外部分享协作者只读展示）。
+   */
+  allowHeaderFooterEdit?: boolean
+  /**
+   * 是否允许从章库盖电子章（内部未锁定合同）。
+   * 落章会写入 document_content.seals（合同级 oss_key，双方可见）。
+   */
+  allowSealEdit?: boolean
+  /** 是否允许拖动/缩放/删除纸面上的章（分享页可不走章库） */
+  sealInteractive?: boolean
+  /** 印章图片展示上下文（合同 JWT / 分享 token） */
+  sealDisplayContext?: SealDisplayContext
+  /**
+   * 将印章图片上传为合同级资源，返回 oss_key。
+   * 内部盖章与外部分享盖章均需提供，保证双方刷新后仍可见。
+   */
+  uploadSealImage?: (file: File) => Promise<{ oss_key: string }>
+  /** @deprecated 已改为持久化 seals；保留兼容 */
+  ephemeralSeals?: DocumentSeal[]
+  /** @deprecated */
+  onEphemeralSealsChange?: (seals: DocumentSeal[]) => void
 }
 
 interface EditableBodyProps {
@@ -603,9 +703,33 @@ const EditableUnifiedBody = memo(
  * 关键点：编辑中禁止 React 重绘 contentEditable 子树，杜绝 removeChild 白屏。
  */
 export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function DocumentEditor(
-  { documentContent, onChange, readOnly = false, emptyText = '该合同暂无文档内容' },
+  {
+    documentContent,
+    onChange,
+    readOnly = false,
+    emptyText = '该合同暂无文档内容',
+    watermarkText = null,
+    watermarkStyle = null,
+    allowHeaderFooterEdit = false,
+    allowSealEdit = false,
+    sealInteractive = false,
+    sealDisplayContext = null,
+    uploadSealImage,
+    ephemeralSeals = [],
+    onEphemeralSealsChange,
+  },
   ref,
 ) {
+  const { message } = App.useApp()
+  /** 变更定位高亮（仅编辑/阅览纸面，不进导出宿主） */
+  const [changeHighlight, setChangeHighlightState] = useState<ChangeHighlightState | null>(null)
+  /** 页眉页脚编辑弹窗 */
+  const [hfModalOpen, setHfModalOpen] = useState(false)
+  const [hfFocus, setHfFocus] = useState<'header' | 'footer' | 'both'>('both')
+  /** 章库与选中落章 */
+  const [sealAssets, setSealAssets] = useState<SealAsset[]>([])
+  const [sealPickerOpen, setSealPickerOpen] = useState(false)
+  const [selectedSealId, setSelectedSealId] = useState<string | null>(null)
   const blocks = useMemo(() => {
     const list = documentContent?.blocks ?? []
     return dedupeBlocksById([...list].sort((a, b) => a.order - b.order))
@@ -627,6 +751,25 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
   const defaultStyle: BlockStyle = documentContent?.default_style ?? {}
   const layout = useMemo(() => computePaperLayout(documentContent?.page), [documentContent?.page])
   const scale = layout.scale
+  /** 移动端将纸面 CSS 缩放到容器宽度（不影响分页测量与导出清晰度） */
+  const [fitScale, setFitScale] = useState(1)
+  const pagesHostRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const el = pagesHostRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const update = (width: number) => {
+      if (width <= 0 || layout.pageWidthPx <= 0) return
+      const next = Math.min(1, width / layout.pageWidthPx)
+      setFitScale((prev) => (Math.abs(prev - next) < 0.001 ? prev : next))
+    }
+    update(el.clientWidth)
+    const ro = new ResizeObserver((entries) => {
+      update(entries[0]?.contentRect.width ?? 0)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [layout.pageWidthPx])
 
   const editorRef = useRef<HTMLDivElement | null>(null)
   const measureRef = useRef<HTMLDivElement | null>(null)
@@ -808,6 +951,42 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
       setCurrentPage(safe)
       setEditSession((s) => s + 1)
     },
+    getPageIndexForBlock: (blockId: string) => findPageIndex(pageIdsRef.current, blockId),
+    setChangeHighlight: (state: ChangeHighlightState | null) => {
+      setChangeHighlightState(state)
+    },
+    jumpToBlock: async (blockId: string) => {
+      const pageIndex = findPageIndex(pageIdsRef.current, blockId)
+      if (pageIndex < 0) return false
+      if (isFocusedRef.current && unifiedBodyRef.current) {
+        unifiedBodyRef.current.blur()
+      }
+      toolbarBridgeRef.current?.hide()
+      if (pageIndex !== currentPageRef.current) {
+        setCurrentPage(pageIndex)
+        setEditSession((s) => s + 1)
+      }
+      // 等待分页 remount 后再滚到块
+      const tryScroll = (): boolean => {
+        const root = editorRef.current
+        if (!root) return false
+        const escaped = blockId.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+        const el = root.querySelector<HTMLElement>(
+          `.doc-editor__pages [data-block-id="${escaped}"]`,
+        )
+        if (!el) return false
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        return true
+      }
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      })
+      if (tryScroll()) return true
+      await new Promise((r) => setTimeout(r, 80))
+      if (tryScroll()) return true
+      await new Promise((r) => setTimeout(r, 120))
+      return tryScroll()
+    },
     preparePagesForExport: async () => {
       if (unifiedBodyRef.current && isFocusedRef.current) {
         unifiedBodyRef.current.blur()
@@ -905,6 +1084,112 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
       frozenBlocksRef.current = normalized
     }
     onChange?.(next)
+  }
+
+  /** 是否可编辑页眉页脚（内部用户且非只读） */
+  const canEditHeaderFooter = allowHeaderFooterEdit && !readOnly
+  const canEditSeal = allowSealEdit && !readOnly
+  const canEditEphemeralSeal = Boolean(onEphemeralSealsChange) && !readOnly
+  const canInteractSeals =
+    !readOnly && (canEditSeal || canEditEphemeralSeal || sealInteractive)
+  const [placingSeal, setPlacingSeal] = useState(false)
+
+  const persistedSeals = documentContent?.seals ?? []
+
+  // 加载内部章库（缩略图仍走用户章库代理）
+  useEffect(() => {
+    if (!canEditSeal) return
+    let cancelled = false
+    listSealAssets()
+      .then((list) => {
+        if (!cancelled) setSealAssets(list)
+      })
+      .catch(() => {
+        if (!cancelled) setSealAssets([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [canEditSeal])
+
+  /** 更新文档内 seals */
+  const patchPersistedSeals = useCallback(
+    (next: DocumentSeal[]) => {
+      if (!documentContent || !onChange) return
+      onChange({
+        ...documentContent,
+        seals: next.length > 0 ? next : undefined,
+      })
+    },
+    [documentContent, onChange],
+  )
+
+  /** 从章库复制为合同级资源后落章（双方可见） */
+  const placeSealFromAsset = useCallback(
+    async (asset: SealAsset) => {
+      if (!documentContent || !onChange) return
+      if (!uploadSealImage) {
+        message.error('当前页面未配置电子章上传')
+        return
+      }
+      if ((documentContent.seals?.length ?? 0) >= 20) {
+        message.warning('单份合同最多 20 枚电子章')
+        return
+      }
+      setPlacingSeal(true)
+      try {
+        const imgRes = await fetch(sealProxyImageUrl(asset.id))
+        if (!imgRes.ok) throw new Error('读取章库图片失败')
+        const blob = await imgRes.blob()
+        const ext = blob.type.includes('jpeg') ? 'jpg' : blob.type.includes('webp') ? 'webp' : 'png'
+        const file = new File([blob], `seal.${ext}`, { type: blob.type || 'image/png' })
+        const uploaded = await uploadSealImage(file)
+        const seal: DocumentSeal = {
+          id: `seal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          oss_key: uploaded.oss_key,
+          asset_id: asset.id,
+          image_url: '',
+          page_index: currentPage,
+          x_ratio: 0.72,
+          y_ratio: 0.78,
+          scale: 1,
+          placed_by: 'internal',
+          placed_at: new Date().toISOString(),
+        }
+        patchPersistedSeals([...(documentContent.seals ?? []), seal])
+        setSelectedSealId(seal.id)
+        setSealPickerOpen(false)
+        message.success('已盖章，请保存版本后对方可见')
+      } catch (e) {
+        message.error(e instanceof Error ? e.message : '盖章失败')
+      } finally {
+        setPlacingSeal(false)
+      }
+    },
+    [documentContent, onChange, currentPage, patchPersistedSeals, uploadSealImage, message],
+  )
+
+  /** 打开页眉页脚设置弹窗 */
+  const openHeaderFooterModal = (focus: 'header' | 'footer' | 'both' = 'both') => {
+    if (!canEditHeaderFooter) return
+    setHfFocus(focus)
+    setHfModalOpen(true)
+  }
+
+  /** 保存页眉页脚（含样式）到文档快照 */
+  const saveHeaderFooter = (value: HeaderFooterSaveValue) => {
+    const current = contentRef.current
+    if (!current || !canEditHeaderFooter) return
+    const next: DocumentContent = {
+      ...current,
+      schema_version: 3,
+      render_mode: 'web_canvas',
+      headers: value.header ? [value.header] : [],
+      footers: value.footer ? [value.footer] : [],
+    }
+    contentRef.current = next
+    onChange?.(next)
+    setHfModalOpen(false)
   }
 
   /** 压入撤销快照（与当前状态相同则跳过） */
@@ -1295,15 +1580,18 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
     return true
   }, [readOnly, scheduleEmitChange, applyOverflowBreaksFromLiveDom, pushUndoSnapshot])
 
-  /** 测量 DOM 更新后执行分页 */
+  /** 测量 DOM 更新后执行分页（保留滚动位置，避免回车后页面跳顶） */
   useLayoutEffect(() => {
     if (!liveMeasureBlocks) return
+    const winX = window.scrollX
+    const winY = window.scrollY
     remasureAndPaginate()
     applyRepaginationAfterEdit()
     setLiveMeasureBlocks(null)
+    window.scrollTo(winX, winY)
   }, [liveMeasureBlocks, remasureAndPaginate, applyRepaginationAfterEdit])
 
-  /** 重挂载后恢复光标到原块 */
+  /** 重挂载后恢复光标到原块（不滚动到页面顶部） */
   useLayoutEffect(() => {
     const blockId = pendingFocusBlockIdRef.current
     if (!blockId || !unifiedBodyRef.current) return
@@ -1314,14 +1602,7 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
     const blockEl = unifiedBodyRef.current.querySelector<HTMLElement>(`[data-block-id="${escaped}"]`)
     if (!blockEl) return
 
-    unifiedBodyRef.current.focus()
-    const range = document.createRange()
-    const sel = window.getSelection()
-    const textNode = blockEl.querySelector('[data-formula-text]') ?? blockEl
-    range.selectNodeContents(textNode)
-    range.collapse(false)
-    sel?.removeAllRanges()
-    sel?.addRange(range)
+    focusEditorBlockWithoutPageJump(unifiedBodyRef.current, blockEl, true)
   }, [editSessionKey])
 
   /** 防抖 / 立即触发实时分页 */
@@ -1449,6 +1730,8 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
 
   const handleUnifiedFocus = () => {
     isFocusedRef.current = true
+    // 开始编辑时清除变更高亮，避免与 contentEditable 冲突
+    setChangeHighlightState(null)
     displayedPageBlockIdsRef.current = pageIdsRef.current[currentPageRef.current] ?? []
     const snapshot: Record<string, DocumentRun[]> = {}
     for (const block of currentPageBlocks) {
@@ -1700,10 +1983,17 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
   }
 
   /** 渲染内容块；key 带 index，杜绝重复 id 冲突 */
-  const renderBlockNode = (block: DocumentBlock, mode: 'edit' | 'measure' | 'export', index: number) => {
+  const renderBlockNode = (
+    block: DocumentBlock,
+    mode: 'edit' | 'measure' | 'export' | 'view',
+    index: number,
+  ) => {
     const style = buildBlockStyle(block)
     const idAttr = mode === 'measure' ? { 'data-measure-id': block.id } : { 'data-block-id': block.id }
     const reactKey = `${mode}-${block.id}-${index}`
+    const showHighlight =
+      (mode === 'edit' || mode === 'view') && changeHighlight?.blockId === block.id
+    const focusClass = showHighlight ? 'doc-block--change-focus' : ''
 
     if (block.type === 'table') {
       return (
@@ -1712,7 +2002,7 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
           {...idAttr}
           data-block-kind="table"
           data-block-type="table"
-          className="doc-editor__table-wrap"
+          className={['doc-editor__table-wrap', focusClass].filter(Boolean).join(' ')}
           contentEditable={false}
           suppressContentEditableWarning
         >
@@ -1737,6 +2027,7 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
               ))}
             </tbody>
           </table>
+          {showHighlight && changeHighlight ? <ChangeDiffOverlay state={changeHighlight} /> : null}
         </div>
       )
     }
@@ -1755,7 +2046,7 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
         data-block-kind="text"
         data-block-type={block.type}
         data-editable-block-id={mode === 'edit' ? block.id : undefined}
-        className={className}
+        className={[className, focusClass].filter(Boolean).join(' ')}
         style={style}
       >
         {block.type === 'formula' ? (
@@ -1769,6 +2060,7 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
               【公式】{f}
             </div>
           ))}
+        {showHighlight && changeHighlight ? <ChangeDiffOverlay state={changeHighlight} /> : null}
       </div>
     )
   }
@@ -1787,33 +2079,123 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
     overflow: 'hidden',
   }
 
-  const headerText = documentContent?.headers?.[0]?.text
-  const footerText = documentContent?.footers?.[0]?.text
+  const headerItem = documentContent?.headers?.[0] ?? null
+  const footerItem = documentContent?.footers?.[0] ?? null
+  const headerText = headerItem?.text ?? ''
+  const footerText = footerItem?.text ?? ''
+  const headerCss = chromeTextStyle(headerItem?.style)
+  const footerCss = chromeTextStyle(footerItem?.style)
   const totalPages = Math.max(1, pageIds.length)
 
-  const renderStaticPageBody = (pageBlocks: DocumentBlock[], mode: 'measure' | 'export') => (
+  /** 纸面页眉区（编辑时可双击；导出仅在有文案时渲染） */
+  const renderHeaderZone = (forExport: boolean) => {
+    if (forExport) {
+      if (!headerText) return null
+      return (
+        <div className="doc-page__header" style={headerCss}>
+          {headerText}
+        </div>
+      )
+    }
+    if (!headerText && !canEditHeaderFooter) return null
+    return (
+      <div
+        className={[
+          'doc-page__header',
+          canEditHeaderFooter ? 'doc-page__header--editable' : '',
+          !headerText ? 'doc-page__header--empty' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        style={headerText ? headerCss : undefined}
+        title={canEditHeaderFooter ? '双击编辑页眉' : undefined}
+        onDoubleClick={
+          canEditHeaderFooter
+            ? (e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                openHeaderFooterModal('header')
+              }
+            : undefined
+        }
+      >
+        {headerText || '双击编辑页眉'}
+      </div>
+    )
+  }
+
+  /** 纸面页脚区（不含系统页码） */
+  const renderFooterZone = (forExport: boolean) => {
+    if (forExport) {
+      if (!footerText) return null
+      return (
+        <div className="doc-page__footer-text" style={footerCss}>
+          {footerText}
+        </div>
+      )
+    }
+    if (!footerText && !canEditHeaderFooter) return null
+    return (
+      <div
+        className={[
+          'doc-page__footer-text',
+          canEditHeaderFooter ? 'doc-page__footer-text--editable' : '',
+          !footerText ? 'doc-page__footer-text--empty' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        style={footerText ? footerCss : undefined}
+        title={canEditHeaderFooter ? '双击编辑页脚' : undefined}
+        onDoubleClick={
+          canEditHeaderFooter
+            ? (e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                openHeaderFooterModal('footer')
+              }
+            : undefined
+        }
+      >
+        {footerText || '双击编辑页脚'}
+      </div>
+    )
+  }
+
+  const renderStaticPageBody = (pageBlocks: DocumentBlock[], mode: 'measure' | 'export' | 'view') => (
     <div className="doc-editor__unified doc-editor__unified--readonly">
       {pageBlocks.map((b, i) => renderBlockNode(b, mode, i))}
     </div>
   )
 
   /** 渲染导出/只读纸面 */
-  const renderExportPaperPage = (pageIndex: number, pageBlocks: DocumentBlock[]) => (
-    <div
-      className="doc-page doc-page--export"
-      style={paperSheetStyle}
-      data-page-index={pageIndex}
-    >
-      {headerText && <div className="doc-page__header">{headerText}</div>}
-      <div className="doc-page__body" style={bodyStyle}>
-        {renderStaticPageBody(pageBlocks, 'export')}
+  const renderExportPaperPage = (pageIndex: number, pageBlocks: DocumentBlock[]) => {
+    const pageSeals = [
+      ...persistedSeals.filter((s) => s.page_index === pageIndex),
+      ...ephemeralSeals.filter((s) => s.page_index === pageIndex),
+    ]
+    return (
+      <div
+        className="doc-page doc-page--export"
+        style={paperSheetStyle}
+        data-page-index={pageIndex}
+      >
+        {renderHeaderZone(true)}
+        <div className="doc-page__body" style={bodyStyle}>
+          {renderStaticPageBody(pageBlocks, 'export')}
+        </div>
+        {renderFooterZone(true)}
+        <div className="doc-page__page-number">
+          第 {pageIndex + 1} 页{totalPages > 1 ? ` / 共 ${totalPages} 页` : ''}
+        </div>
+        {watermarkText ? <DocumentWatermark text={watermarkText} style={watermarkStyle} /> : null}
+        <DocumentSealLayer
+          seals={pageSeals}
+          displayContext={sealDisplayContext}
+          interactive={false}
+        />
       </div>
-      {footerText && <div className="doc-page__footer-text">{footerText}</div>}
-      <div className="doc-page__page-number">
-        第 {pageIndex + 1} 页{totalPages > 1 ? ` / 共 ${totalPages} 页` : ''}
-      </div>
-    </div>
-  )
+    )
+  }
 
   if (!documentContent) {
     return (
@@ -1870,34 +2252,172 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
             disabled={!fixedToolbarBlockId}
             onChange={applyStyleFromToolbar}
           />
+          {canEditHeaderFooter ? (
+            <Button
+              type="default"
+              size="small"
+              className="doc-editor__hf-btn"
+              icon={<FormOutlined />}
+              onClick={() => openHeaderFooterModal('both')}
+            >
+              页眉页脚
+            </Button>
+          ) : null}
+          {canEditSeal ? (
+            <Popover
+              open={sealPickerOpen}
+              onOpenChange={setSealPickerOpen}
+              trigger="click"
+              placement="bottomLeft"
+              content={
+                <div style={{ width: 240, maxHeight: 280, overflow: 'auto' }}>
+                  {sealAssets.length === 0 ? (
+                    <Typography.Text type="secondary">
+                      暂无电子章，请先到「合同设置 → 电子章」上传
+                    </Typography.Text>
+                  ) : (
+                    <Space orientation="vertical" style={{ width: '100%' }} size={8}>
+                      {sealAssets.map((asset) => (
+                        <Button
+                          key={asset.id}
+                          type="text"
+                          block
+                          style={{ height: 'auto', padding: 8, textAlign: 'left' }}
+                          onClick={() => void placeSealFromAsset(asset)}
+                          loading={placingSeal}
+                        >
+                          <Space>
+                            <img
+                              src={sealProxyImageUrl(asset.id)}
+                              alt=""
+                              style={{ width: 36, height: 36, objectFit: 'contain' }}
+                            />
+                            <span>
+                              {asset.name}
+                              {asset.is_default ? '（默认）' : ''}
+                            </span>
+                          </Space>
+                        </Button>
+                      ))}
+                    </Space>
+                  )}
+                </div>
+              }
+            >
+              <Button type="default" size="small" icon={<AuditOutlined />}>
+                盖章
+              </Button>
+            </Popover>
+          ) : null}
         </div>
       )}
 
-      <div className="doc-editor__pages">
-        <div className="doc-page" style={paperSheetStyle} data-page-index={currentPage}>
-          {headerText && <div className="doc-page__header">{headerText}</div>}
-          <div className="doc-page__body" style={bodyStyle}>
-            {readOnly ? (
-              renderStaticPageBody(currentPageBlocks, 'export')
-            ) : (
-              <EditableUnifiedBody
-                sessionKey={editSessionKey}
-                pageBlocks={currentPageBlocks}
-                defaultStyle={defaultStyle}
-                scale={scale}
-                bodyRef={unifiedBodyRef}
-                onFocus={handleUnifiedFocus}
-                onBlur={handleUnifiedBlur}
-                onSelectionRefresh={refreshSelectionToolbar}
-                onInputCommit={handleEditorInput}
-                onEditorKeyDown={handleEditorKeyDown}
-                renderBlockNode={renderBlockNode}
+      {canEditHeaderFooter && !headerText && !footerText ? (
+        <Alert
+          className="doc-editor__hf-hint"
+          type="info"
+          showIcon
+          message="可点击工具栏「页眉页脚」设置，或双击纸面顶部 / 底部区域直接编辑"
+        />
+      ) : null}
+
+      <div className="doc-editor__pages" ref={pagesHostRef}>
+        <div
+          className="doc-editor__page-fit"
+          style={{
+            height: layout.pageHeightPx * fitScale,
+          }}
+        >
+          <div
+            className="doc-editor__page-fit-inner"
+            style={{
+              width: layout.pageWidthPx,
+              height: layout.pageHeightPx,
+              transform: fitScale < 0.999 ? `scale(${fitScale})` : undefined,
+            }}
+          >
+            <div
+              className="doc-page"
+              style={paperSheetStyle}
+              data-page-index={currentPage}
+              /* 点章外区域取消选中，隐藏缩放/删除控件与边框 */
+              onMouseDownCapture={(e) => {
+                if (!canInteractSeals) return
+                const t = e.target as HTMLElement | null
+                if (t?.closest?.('.doc-seal')) return
+                setSelectedSealId(null)
+              }}
+            >
+              {renderHeaderZone(false)}
+              <div className="doc-page__body" style={bodyStyle}>
+                {readOnly ? (
+                  renderStaticPageBody(currentPageBlocks, 'view')
+                ) : (
+                  <EditableUnifiedBody
+                    sessionKey={editSessionKey}
+                    pageBlocks={currentPageBlocks}
+                    defaultStyle={defaultStyle}
+                    scale={scale}
+                    bodyRef={unifiedBodyRef}
+                    onFocus={handleUnifiedFocus}
+                    onBlur={handleUnifiedBlur}
+                    onSelectionRefresh={refreshSelectionToolbar}
+                    onInputCommit={handleEditorInput}
+                    onEditorKeyDown={handleEditorKeyDown}
+                    renderBlockNode={renderBlockNode}
+                  />
+                )}
+              </div>
+              {renderFooterZone(false)}
+              <div className="doc-page__page-number">
+                第 {currentPage + 1} 页{totalPages > 1 ? ` / 共 ${totalPages} 页` : ''}
+              </div>
+              {watermarkText ? <DocumentWatermark text={watermarkText} style={watermarkStyle} /> : null}
+              <DocumentSealLayer
+                seals={[
+                  ...persistedSeals.filter((s) => s.page_index === currentPage),
+                  ...ephemeralSeals.filter((s) => s.page_index === currentPage),
+                ]}
+                displayContext={sealDisplayContext}
+                interactive={canInteractSeals}
+                selectedId={selectedSealId}
+                fitScale={fitScale}
+                onSelect={setSelectedSealId}
+                onMove={(id, x, y) => {
+                  const inPersisted = persistedSeals.some((s) => s.id === id)
+                  if (inPersisted) {
+                    patchPersistedSeals(
+                      persistedSeals.map((s) => (s.id === id ? { ...s, x_ratio: x, y_ratio: y } : s)),
+                    )
+                    return
+                  }
+                  onEphemeralSealsChange?.(
+                    ephemeralSeals.map((s) => (s.id === id ? { ...s, x_ratio: x, y_ratio: y } : s)),
+                  )
+                }}
+                onScale={(id, scale) => {
+                  const inPersisted = persistedSeals.some((s) => s.id === id)
+                  if (inPersisted) {
+                    patchPersistedSeals(
+                      persistedSeals.map((s) => (s.id === id ? { ...s, scale } : s)),
+                    )
+                    return
+                  }
+                  onEphemeralSealsChange?.(
+                    ephemeralSeals.map((s) => (s.id === id ? { ...s, scale } : s)),
+                  )
+                }}
+                onRemove={(id) => {
+                  const inPersisted = persistedSeals.some((s) => s.id === id)
+                  if (inPersisted) {
+                    patchPersistedSeals(persistedSeals.filter((s) => s.id !== id))
+                  } else {
+                    onEphemeralSealsChange?.(ephemeralSeals.filter((s) => s.id !== id))
+                  }
+                  setSelectedSealId(null)
+                }}
               />
-            )}
-          </div>
-          {footerText && <div className="doc-page__footer-text">{footerText}</div>}
-          <div className="doc-page__page-number">
-            第 {currentPage + 1} 页{totalPages > 1 ? ` / 共 ${totalPages} 页` : ''}
+            </div>
           </div>
         </div>
         <PageNavigator
@@ -1931,6 +2451,15 @@ export default forwardRef<DocumentEditorHandle, DocumentEditorProps>(function Do
           )
         })}
       </div>
+
+      <HeaderFooterSettingsModal
+        open={hfModalOpen}
+        header={headerItem}
+        footer={footerItem}
+        focus={hfFocus}
+        onCancel={() => setHfModalOpen(false)}
+        onSave={saveHeaderFooter}
+      />
     </div>
   )
 })

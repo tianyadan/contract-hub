@@ -23,6 +23,10 @@ interface ConfirmActionBarProps {
   editReadOnly?: boolean
   /** 是否禁用导出 PDF */
   exportDisabled?: boolean
+  /** 布局：水平（默认）或纵向铺满（分享页侧栏） */
+  layout?: 'horizontal' | 'vertical'
+  /** 手机 Dock：短文案 + 更大触控 */
+  compact?: boolean
 }
 
 /**
@@ -38,33 +42,50 @@ export default function ConfirmActionBar({
   downloading = false,
   editReadOnly = false,
   exportDisabled = false,
+  layout = 'horizontal',
+  compact = false,
 }: ConfirmActionBarProps) {
+  const vertical = layout === 'vertical'
+  const btnSize = vertical || compact ? 'large' : 'middle'
+
   return (
-    <Space wrap>
+    <Space
+      className={compact ? 'confirm-action-bar confirm-action-bar--compact' : 'confirm-action-bar'}
+      orientation={vertical ? 'vertical' : 'horizontal'}
+      wrap={!vertical && !compact}
+      style={vertical || compact ? { width: '100%' } : undefined}
+      size={vertical ? 10 : compact ? 8 : undefined}
+    >
       <Button
         type="primary"
         icon={<SaveOutlined />}
         loading={saving}
         disabled={editReadOnly}
         onClick={onSave}
+        block={vertical || compact}
+        size={btnSize}
       >
-        保存版本
+        {compact ? '保存' : '保存版本'}
       </Button>
       <Button
         icon={<CheckCircleOutlined />}
         loading={confirming}
         disabled={editReadOnly}
         onClick={onConfirm}
+        block={vertical || compact}
+        size={btnSize}
       >
-        确认合同
+        {compact ? '确认' : '确认合同'}
       </Button>
       <Button
         icon={<DownloadOutlined />}
         loading={downloading}
         disabled={exportDisabled}
         onClick={onDownload}
+        block={vertical || compact}
+        size={btnSize}
       >
-        导出 PDF
+        {compact ? '导出' : '导出 PDF'}
       </Button>
     </Space>
   )

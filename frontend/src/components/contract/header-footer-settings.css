@@ -1,0 +1,19 @@
+.hf-settings__toolbar {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  background: #fafafa;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.hf-settings__toolbar .format-toolbar {
+  flex-wrap: wrap;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+}
+
+.hf-settings__textarea {
+  line-height: 1.5;
+}

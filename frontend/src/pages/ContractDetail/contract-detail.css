@@ -1,71 +1,179 @@
 /* 合同详情 / 在线编辑页样式 */
 
-.contract-detail__header {
-  margin-bottom: 16px;
+.contract-detail {
+  --cd-surface: #ffffff;
+  --cd-canvas: #e8ecf0;
+  --cd-border: #ebebeb;
+  --cd-text: rgba(0, 0, 0, 0.88);
+  --cd-muted: rgba(0, 0, 0, 0.45);
+  --cd-accent: #00b96b;
+  min-height: calc(100vh - 120px);
 }
 
-/* 头部：左信息 + 右操作 */
+/* ---------- 顶栏：单行信息 + 操作 ---------- */
+.contract-detail__header {
+  margin-bottom: 12px;
+  border: 1px solid var(--cd-border);
+  border-radius: 12px;
+  background: var(--cd-surface);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.contract-detail__header .ant-card-body {
+  padding: 14px 18px !important;
+}
+
+.contract-detail__header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
 .contract-detail__header-main {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.contract-detail__back {
+  margin-top: 2px;
+  color: var(--cd-muted);
 }
 
 .contract-detail__title-block {
   min-width: 0;
 }
 
+.contract-detail__title {
+  margin: 0 !important;
+  font-size: 18px !important;
+  line-height: 1.35 !important;
+  font-weight: 650 !important;
+}
+
 .contract-detail__meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-top: 6px;
   font-size: 13px;
 }
 
 .contract-detail__header-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 12px;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
-/* 在线用户头像 */
-.contract-detail__presence {
-  display: flex;
-  align-items: center;
-}
-
-/* 历史版本提示条 */
-.contract-detail__import-hint {
-  margin-bottom: 16px;
-}
-
-.contract-detail__source-collapse {
-  margin-top: 16px;
-}
-
+/* ---------- 提示条 ---------- */
 .contract-detail__version-alert {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+  border-radius: 10px;
 }
 
-/* 主体区 */
+/* ---------- 主体双栏 ---------- */
 .contract-detail__body {
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 .contract-detail__editor-card {
-  margin-bottom: 16px;
+  margin-bottom: 0;
+  border: 1px solid var(--cd-border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  height: 100%;
 }
 
-/* 底部修改说明条 */
+.contract-detail__editor-card > .ant-card-head {
+  min-height: 48px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--cd-border);
+  background: #fafbfc;
+}
+
+.contract-detail__editor-card > .ant-card-body {
+  padding: 0;
+  background: var(--cd-canvas);
+}
+
+.contract-detail__editor-workspace {
+  position: relative;
+  min-height: 560px;
+  padding: 12px 12px 56px;
+}
+
+.contract-detail__editor-banners {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.contract-detail__editor-banners .confirm-status-banner,
+.contract-detail__editor-banners .ant-alert {
+  margin-bottom: 0;
+}
+
+.contract-detail__editor-workspace .doc-editor {
+  background: transparent;
+}
+
+/* 底部修改说明 */
 .contract-detail__save-bar {
-  margin-top: 16px;
+  margin-top: 0;
+  padding: 10px 16px 14px;
+  background: var(--cd-surface);
+  border-top: 1px solid var(--cd-border);
+}
+
+/* ---------- 右侧信息栏 ---------- */
+.contract-detail__side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+}
+
+.contract-detail__side-card {
+  border: 1px solid var(--cd-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--cd-surface);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  flex: 1;
+  min-height: 420px;
+}
+
+.contract-detail__side-card .ant-tabs-nav {
+  margin: 0;
+  padding: 0 12px;
+  background: #fafbfc;
+}
+
+.contract-detail__side-card .ant-tabs-content-holder {
+  padding: 12px;
+}
+
+.contract-detail__side-pane {
+  max-height: min(68vh, 720px);
+  overflow: auto;
 }
 
 .contract-detail__confirmation-item {
-  padding: 6px 0;
+  padding: 8px 0;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.contract-detail__confirmation-item:last-child {
+  border-bottom: none;
 }
 
 .contract-detail__export-preview {
@@ -83,4 +191,126 @@
 .contract-detail__not-found {
   text-align: center;
   padding: 60px 0;
+}
+
+@media (max-width: 991px) {
+  .contract-detail__editor-workspace {
+    min-height: 420px;
+  }
+
+  .contract-detail__side-card {
+    min-height: 320px;
+  }
+}
+
+@media (max-width: 767px) {
+  .contract-detail {
+    min-height: auto;
+  }
+
+  .contract-detail--mobile {
+    padding-bottom: calc(108px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .contract-detail__header .ant-card-body {
+    padding: 10px 12px !important;
+  }
+
+  .contract-detail__header-row {
+    gap: 8px;
+  }
+
+  .contract-detail__back {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    margin-top: 0;
+  }
+
+  .contract-detail__title {
+    font-size: 16px !important;
+    max-width: calc(100vw - 88px);
+  }
+
+  .contract-detail__meta {
+    margin-top: 4px;
+    gap: 4px 6px;
+  }
+
+  .contract-detail__editor-card > .ant-card-head {
+    display: none;
+  }
+
+  .contract-detail__editor-workspace {
+    min-height: 360px;
+    padding: 8px 6px 56px;
+  }
+
+  .contract-detail__side-card {
+    min-height: 0;
+  }
+
+  .contract-detail__side-card--mobile-tabs > .ant-card-body {
+    padding: 0;
+  }
+
+  .contract-detail__side-pane {
+    max-height: 42vh;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .contract-detail__save-bar {
+    padding: 10px 12px 14px;
+  }
+
+  /* 底部固定操作栏 */
+  .contract-detail__mobile-dock {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: rgba(255, 255, 255, 0.96);
+    border-top: 1px solid var(--cd-border);
+    box-shadow: 0 -6px 20px rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(10px);
+  }
+
+  .contract-detail__mobile-dock-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .contract-detail__mobile-dock .confirm-action-bar--compact .ant-space-item {
+    flex: 1;
+  }
+
+  .contract-detail__mobile-dock .ant-btn {
+    height: 40px;
+    font-size: 13px;
+  }
+
+  /* 浮层避开底部 Dock */
+  .contract-detail--mobile .online-presence-float {
+    position: fixed;
+    right: 12px;
+    bottom: calc(112px + env(safe-area-inset-bottom, 0px));
+    z-index: 45;
+  }
+
+  .contract-detail--mobile .change-inspect-exit-float {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(112px + env(safe-area-inset-bottom, 0px));
+    transform: none;
+    max-width: none;
+    z-index: 45;
+  }
 }

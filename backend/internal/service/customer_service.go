@@ -12,8 +12,7 @@ import (
 )
 
 var (
-	ErrCustomerNotFound      = errors.New("客户不存在或无权访问")
-	ErrCustomerHasContracts  = errors.New("客户下存在进行中的合同，无法删除")
+	ErrCustomerNotFound = errors.New("客户不存在或无权访问")
 )
 
 // CustomerService 客户管理业务逻辑。
@@ -117,19 +116,51 @@ func (s *CustomerService) Update(ctx context.Context, input UpdateCustomerInput)
 	return toCustomerVO(updated), nil
 }
 
-// Delete 软删除客户。
-func (s *CustomerService) Delete(ctx context.Context, customerID, userID int64) error {
-	count, err := s.customers.CountActiveContracts(ctx, customerID)
+// DeleteCustomerResult 删除客户结果。
+type DeleteCustomerResult struct {
+	DeletedContractCount int `json:"deleted_contract_count"`
+}
+
+// DeleteCustomerInput 删除客户入参。
+type DeleteCustomerInput struct {
+	CustomerID int64
+	UserID     int64
+	Username   string
+	ClientIP   string
+	UserAgent  string
+	// DeleteContracts 由调用方注入：先删除客户下全部合同（含 OSS 清理）。
+	DeleteContracts func(ctx context.Context, contractIDs []int64) error
+}
+
+// Delete 删除客户：先级联删除名下全部合同，再软删除客户档案。
+func (s *CustomerService) Delete(ctx context.Context, input DeleteCustomerInput) (*DeleteCustomerResult, error) {
+	customer, err := s.customers.GetByOwner(ctx, input.CustomerID, input.UserID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if count > 0 {
-		return ErrCustomerHasContracts
+	if customer == nil {
+		return nil, ErrCustomerNotFound
 	}
-	if err := s.customers.SoftDelete(ctx, customerID, userID); err != nil {
-		return ErrCustomerNotFound
+
+	contractIDs, err := s.contracts.ListIDsByCustomerAndOwner(ctx, input.CustomerID, input.UserID)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+
+	if len(contractIDs) > 0 {
+		if input.DeleteContracts == nil {
+			return nil, errors.New("未配置合同删除能力")
+		}
+		if err := input.DeleteContracts(ctx, contractIDs); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := s.customers.SoftDelete(ctx, input.CustomerID, input.UserID); err != nil {
+		return nil, ErrCustomerNotFound
+	}
+
+	return &DeleteCustomerResult{DeletedContractCount: len(contractIDs)}, nil
 }
 
 // Detail 客户详情。

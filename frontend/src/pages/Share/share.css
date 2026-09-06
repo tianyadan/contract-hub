@@ -1,8 +1,15 @@
-/* 外部协作者访问页样式（公开页面，不套主布局） */
+/* 外部协作者访问页（公开，不套主布局）— 对齐分享页设计稿 */
 
 .share-page {
+  --sp-bg: #f7f8fa;
+  --sp-surface: #ffffff;
+  --sp-border: #e5e6eb;
+  --sp-text: rgba(0, 0, 0, 0.88);
+  --sp-muted: rgba(0, 0, 0, 0.45);
+  --sp-accent: #00b96b;
+  --sp-accent-soft: #e8f8ef;
   min-height: 100vh;
-  background: #f5f7f6;
+  background: var(--sp-bg);
   display: flex;
   flex-direction: column;
 }
@@ -13,57 +20,379 @@
   padding: 24px;
 }
 
-/* 顶部品牌条 */
-.share-page__brand {
+/* ---------- 顶栏（白底） ---------- */
+.share-page__topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 56px;
-  padding: 0 24px;
-  background: linear-gradient(135deg, #14c98f 0%, #00b96b 60%, #00915a 100%);
-  color: #ffffff;
+  gap: 16px;
+  min-height: 56px;
+  padding: 0 20px;
+  background: var(--sp-surface);
+  border-bottom: 1px solid var(--sp-border);
 }
 
-.share-page__brand-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #ffffff;
-  display: inline-block;
+.share-page__topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .share-page__brand-name {
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 1px;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--sp-text);
+  white-space: nowrap;
 }
 
-/* 内容区 */
+.share-page__mode-tag {
+  margin: 0 !important;
+  border: none;
+  background: var(--sp-accent-soft) !important;
+  color: #0b8f58 !important;
+  font-weight: 500;
+}
+
+.share-page__topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.share-page__share-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sp-muted);
+  font-size: 13px;
+}
+
+.share-page__user {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 10px;
+  border-radius: 999px;
+  background: #f5f5f5;
+}
+
+.share-page__user-name {
+  font-size: 13px;
+  color: var(--sp-text);
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 内容区 ---------- */
 .share-page__content {
   width: 100%;
-  max-width: 1200px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 20px 20px 32px;
+  flex: 1;
 }
 
-/* 合同概要卡片 */
-.share-page__info {
-  margin-bottom: 16px;
-}
-
-/* 加入协作卡片 */
+/* 门禁加入 */
 .share-page__join {
+  max-width: 480px;
+  margin: 48px auto;
   text-align: center;
-  padding: 40px 24px;
+  border: 1px solid var(--sp-border);
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.06);
 }
 
 .share-page__join .ant-card-body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  padding: 36px 28px;
 }
 
-/* 操作卡片 */
-.share-page__actions {
-  margin-top: 16px;
+/* 合同标题与元信息 */
+.share-page__doc-head {
+  margin-bottom: 14px;
+}
+
+.share-page__doc-title {
+  margin: 0 0 10px !important;
+  font-size: 20px !important;
+  font-weight: 650 !important;
+  line-height: 1.35 !important;
+  color: var(--sp-text);
+}
+
+.share-page__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  font-size: 13px;
+  color: var(--sp-muted);
+}
+
+.share-page__meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.share-page__meta-label {
+  color: rgba(0, 0, 0, 0.35);
+}
+
+/* ---------- 主体双栏 ---------- */
+.share-page__body {
+  align-items: flex-start;
+}
+
+.share-page__main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.share-page__tip {
+  margin: 0 !important;
+  border: 1px solid #b7eb8f;
+  border-radius: 10px;
+  background: #f6ffed;
+}
+
+.share-page__editor-card {
+  border: 1px solid var(--sp-border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.share-page__editor-card > .ant-card-body {
+  padding: 0;
+  background: #e8ecf0;
+}
+
+.share-page__editor-workspace {
+  position: relative;
+  min-height: 520px;
+  padding: 12px 12px 56px;
+}
+
+.share-page__editor-banners {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.share-page__editor-banners .confirm-status-banner,
+.share-page__editor-banners .ant-alert {
+  margin-bottom: 0;
+}
+
+/* ---------- 右侧面板 ---------- */
+.share-page__side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.share-page__panel {
+  border: 1px solid var(--sp-border) !important;
+  border-radius: 12px !important;
+  background: var(--sp-surface);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.share-page__panel > .ant-card-head {
+  min-height: 44px;
+  padding: 0 14px;
+  border-bottom: 1px solid #f0f0f0;
+  font-weight: 600;
+}
+
+.share-page__panel > .ant-card-body {
+  padding: 12px 14px;
+}
+
+.share-page__panel--versions .ant-card-body {
+  max-height: min(42vh, 420px);
+  overflow: auto;
+}
+
+.share-page__collab-box {
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  background: #f7f8fa;
+  border: 1px solid #f0f0f0;
+}
+
+.share-page__collab-box .ant-alert {
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.share-page__confirm-item {
+  padding: 8px 0;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.share-page__confirm-item:last-child {
+  border-bottom: none;
+}
+
+@media (max-width: 991px) {
+  .share-page__topbar {
+    padding: 8px 12px;
+    flex-wrap: wrap;
+  }
+
+  .share-page__content {
+    padding: 14px 12px 24px;
+  }
+
+  .share-page__editor-workspace {
+    min-height: 420px;
+  }
+}
+
+/* ---------- 手机端（≤767） ---------- */
+@media (max-width: 767px) {
+  .share-page--mobile {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .share-page__topbar {
+    min-height: 48px;
+    padding: 6px 10px;
+    gap: 8px;
+  }
+
+  .share-page__brand-name {
+    font-size: 14px;
+  }
+
+  .share-page__content {
+    padding: 10px 10px 16px;
+  }
+
+  .share-page__doc-title {
+    font-size: 17px !important;
+    margin-bottom: 8px !important;
+  }
+
+  .share-page__meta {
+    gap: 6px 10px;
+    font-size: 12px;
+  }
+
+  .share-page__join {
+    margin: 16px auto;
+    border-radius: 12px;
+  }
+
+  .share-page__join .ant-card-body {
+    padding: 24px 16px;
+  }
+
+  .share-page__editor-card {
+    border-radius: 10px;
+  }
+
+  .share-page__editor-workspace {
+    min-height: 360px;
+    padding: 8px 6px 48px;
+  }
+
+  .share-page__panel--mobile-tabs > .ant-card-body {
+    padding: 4px 8px 12px;
+  }
+
+  .share-page__mobile-tab-pane {
+    max-height: 42vh;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-top: 4px;
+  }
+
+  /* 底部固定操作栏 */
+  .share-page__mobile-dock {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: rgba(255, 255, 255, 0.96);
+    border-top: 1px solid var(--sp-border);
+    box-shadow: 0 -6px 20px rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(10px);
+  }
+
+  .share-page__mobile-dock-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .share-page__mobile-dock .ant-space {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .share-page__mobile-dock .ant-space-item {
+    flex: 1;
+  }
+
+  .share-page__mobile-dock .confirm-action-bar--compact {
+    width: 100%;
+  }
+
+  .share-page__mobile-dock .ant-btn {
+    width: 100%;
+    height: 40px;
+    padding-inline: 8px;
+    font-size: 13px;
+  }
+
+  /* 浮层避开底部 Dock，避免挡住保存/确认 */
+  .share-page--mobile .online-presence-float {
+    position: fixed;
+    right: 12px;
+    bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+    z-index: 45;
+  }
+
+  .share-page--mobile .change-inspect-exit-float {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(100px + env(safe-area-inset-bottom, 0px));
+    transform: none;
+    max-width: none;
+    z-index: 45;
+  }
+
+  .share-page--center {
+    padding: 16px;
+  }
+
+  .share-page--center .ant-card {
+    width: 100% !important;
+    max-width: 420px;
+  }
 }

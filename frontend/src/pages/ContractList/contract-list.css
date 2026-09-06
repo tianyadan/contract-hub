@@ -58,3 +58,31 @@
   font-size: 13px;
   color: #8c8c8c;
 }
+
+@media (max-width: 767px) {
+  .contract-list--mobile .contract-list__header {
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .contract-list--mobile .contract-list__title {
+    font-size: 18px;
+  }
+
+  .contract-list--mobile .contract-list__search-form--mobile .ant-form-item {
+    margin-bottom: 10px;
+    width: 100%;
+  }
+
+  .contract-list--mobile .contract-list__search .ant-card-body {
+    padding: 12px;
+  }
+
+  .contract-list--mobile .contract-list__table .ant-card-body {
+    padding: 12px;
+  }
+
+  .contract-list--mobile .ant-list-empty-text {
+    padding: 0;
+  }
+}

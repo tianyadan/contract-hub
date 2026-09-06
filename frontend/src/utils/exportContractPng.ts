@@ -4,8 +4,6 @@ import JSZip from 'jszip'
 export interface ExportPngOptions {
   /** 像素密度，默认 2 */
   pixelRatio?: number
-  /** 是否为草稿（叠加水印） */
-  draft?: boolean
 }
 
 /** 收集可导出的页面节点：优先离屏全页宿主，其次可见 .doc-page */
@@ -26,39 +24,20 @@ export function collectExportPageElements(root: HTMLElement): HTMLElement[] {
   return editor ? [editor] : []
 }
 
-/** 在导出目标上临时叠加水印 */
-function withDraftWatermark(pages: HTMLElement[], draft: boolean): () => void {
-  if (!draft) return () => undefined
-  const marks: HTMLElement[] = []
-  pages.forEach((page) => {
-    const mark = document.createElement('div')
-    mark.className = 'contract-export-watermark'
-    mark.textContent = '草稿'
-    page.appendChild(mark)
-    marks.push(mark)
-  })
-  return () => marks.forEach((mark) => mark.remove())
-}
-
-/** 将页面节点列表渲染为 PNG Blob */
+/** 将页面节点列表渲染为 PNG Blob（不再叠加「草稿」字样） */
 export async function exportPagesAsPng(
   pageElements: HTMLElement[],
   options: ExportPngOptions = {},
 ): Promise<Blob[]> {
   const pixelRatio = options.pixelRatio ?? 2
-  const cleanup = withDraftWatermark(pageElements, Boolean(options.draft))
   const blobs: Blob[] = []
-  try {
-    for (const el of pageElements) {
-      const dataUrl = await toPng(el, {
-        cacheBust: true,
-        pixelRatio,
-        backgroundColor: '#ffffff',
-      })
-      blobs.push(await (await fetch(dataUrl)).blob())
-    }
-  } finally {
-    cleanup()
+  for (const el of pageElements) {
+    const dataUrl = await toPng(el, {
+      cacheBust: true,
+      pixelRatio,
+      backgroundColor: '#ffffff',
+    })
+    blobs.push(await (await fetch(dataUrl)).blob())
   }
   return blobs
 }

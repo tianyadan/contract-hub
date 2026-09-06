@@ -11,6 +11,8 @@ import CustomerDetailPage from './pages/Customers/CustomerDetailPage'
 import SharePage from './pages/Share/SharePage'
 import VerifyPage from './pages/Verify/VerifyPage'
 import PlaceholderPage from './pages/Placeholder/PlaceholderPage'
+import WatermarkSettingsPage from './pages/Settings/WatermarkSettingsPage'
+import SealSettingsPage from './pages/Settings/SealSettingsPage'
 import MainLayout from './layouts/MainLayout'
 import { isLoggedIn } from './utils/token'
 
@@ -54,12 +56,9 @@ export default function App() {
         <Route path="/customers/:id" element={<CustomerDetailPage />} />
         <Route path="/contracts" element={<ContractListPage />} />
         <Route path="/contracts/:id" element={<ContractDetailPage />} />
-        <Route
-          path="/settings"
-          element={
-            <PlaceholderPage title="系统设置" description="账号与系统参数配置" />
-          }
-        />
+        <Route path="/settings" element={<Navigate to="/settings/watermark" replace />} />
+        <Route path="/settings/watermark" element={<WatermarkSettingsPage />} />
+        <Route path="/settings/seal" element={<SealSettingsPage />} />
         <Route
           path="/statistics"
           element={

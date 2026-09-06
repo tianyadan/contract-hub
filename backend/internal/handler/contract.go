@@ -260,6 +260,7 @@ func (h *ContractHandler) BatchDelete(c *gin.Context) {
 type SaveVersionRequest struct {
 	DocumentContent map[string]interface{} `json:"document_content"`
 	ChangeSummary   string                 `json:"change_summary"`
+	BaseVersionID   int64                  `json:"base_version_id"`
 }
 
 // SaveVersion 保存新版本
@@ -296,6 +297,7 @@ func (h *ContractHandler) SaveVersion(c *gin.Context) {
 		Username:        middleware.GetUsername(c),
 		DocumentContent: req.DocumentContent,
 		ChangeSummary:   req.ChangeSummary,
+		BaseVersionID:   req.BaseVersionID,
 		ClientIP:        c.ClientIP(),
 		UserAgent:       c.Request.UserAgent(),
 	})
@@ -546,10 +548,68 @@ func (h *ContractHandler) GetVersionExportPdf(c *gin.Context) {
 	response.Success(c, http.StatusOK, "ok", result)
 }
 
+// UploadContractSeal 上传合同级电子章图片（双方可见，写入 seals.oss_key）。
+func (h *ContractHandler) UploadContractSeal(c *gin.Context) {
+	contractID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || contractID <= 0 {
+		response.Error(c, http.StatusBadRequest, 40001, "合同ID不合法")
+		return
+	}
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, 40001, "请上传印章图片文件")
+		return
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, 40001, "无法读取上传文件")
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, 2*1024*1024+1))
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, 40001, "读取文件失败")
+		return
+	}
+	mimeType := fileHeader.Header.Get("Content-Type")
+	if mimeType == "" || mimeType == "application/octet-stream" {
+		mimeType = service.GuessSealMime(fileHeader.Filename)
+	}
+	result, err := h.svc.UploadContractSeal(c.Request.Context(), contractID, middleware.GetUserID(c), data, mimeType)
+	if err != nil {
+		writeContractError(c, err)
+		return
+	}
+	response.Success(c, http.StatusOK, "上传成功", result)
+}
+
+// StreamContractSeal 代理输出合同级电子章（支持 Bearer 或 query token）。
+func (h *ContractHandler) StreamContractSeal(c *gin.Context) {
+	contractID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || contractID <= 0 {
+		response.Error(c, http.StatusBadRequest, 40001, "合同ID不合法")
+		return
+	}
+	ossKey := c.Query("key")
+	data, mimeType, err := h.svc.StreamContractSeal(c.Request.Context(), contractID, middleware.GetUserID(c), ossKey)
+	if err != nil {
+		writeContractError(c, err)
+		return
+	}
+	c.Header("Cache-Control", "private, max-age=300")
+	c.Data(http.StatusOK, mimeType, data)
+}
+
 // writeContractError 将合同 service 层错误转换为统一 HTTP 响应。
 func writeContractError(c *gin.Context, err error) {
+	var conflict *service.VersionConflictError
+	if errors.As(err, &conflict) {
+		response.ErrorWithData(c, http.StatusConflict, 40901, conflict.Error(), conflict.Payload)
+		return
+	}
 	switch {
 	case errors.Is(err, service.ErrInvalidContractInput),
+		errors.Is(err, service.ErrInvalidInput),
 		errors.Is(err, service.ErrInvalidFileType),
 		errors.Is(err, service.ErrEmptyFile),
 		errors.Is(err, service.ErrFileTooLarge),
@@ -565,6 +625,9 @@ func writeContractError(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrContractLocked),
 		errors.Is(err, service.ErrAlreadyConfirmed):
 		response.Error(c, http.StatusForbidden, 40301, err.Error())
+	case errors.Is(err, service.ErrVersionRace),
+		errors.Is(err, service.ErrVersionConflict):
+		response.Error(c, http.StatusConflict, 40902, err.Error())
 	case errors.Is(err, service.ErrDocParseFailed):
 		response.Error(c, http.StatusUnprocessableEntity, 42201, err.Error())
 	case errors.Is(err, service.ErrVersionNotFound),

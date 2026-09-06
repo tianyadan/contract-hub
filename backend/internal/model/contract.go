@@ -26,19 +26,20 @@ type Contract struct {
 
 // ContractVersion 对应 contract_version 表。
 type ContractVersion struct {
-	ID              int64
-	ContractID      int64
-	VersionNo       int
-	CreatedBy       int64
-	CreatedByName   string // 非表字段，列表查询时通过 join 填充
-	CollaboratorID  *int64
-	OssObjectKey    string
-	OssURL          string
-	FileName        string
-	FileSize        int64
-	FileHash        string
-	DocumentContent string
-	ChangeSummary   string
+	ID                 int64
+	ContractID         int64
+	VersionNo          int
+	CreatedBy          int64
+	CreatedByName      string // 非表字段，列表查询时通过 join 填充
+	CollaboratorID     *int64
+	SourceVersionID    *int64
+	OssObjectKey       string
+	OssURL             string
+	FileName           string
+	FileSize           int64
+	FileHash           string
+	DocumentContent    string
+	ChangeSummary      string
 	ExportPngOssPrefix string
 	ExportPngPageCount int
 	ExportPngHash      string
