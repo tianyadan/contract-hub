@@ -1,0 +1,7 @@
+# 减小 Python 构建上下文
+.git
+.gitignore
+.env
+venv
+**/__pycache__
+*.md

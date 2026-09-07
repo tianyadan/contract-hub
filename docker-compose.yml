@@ -1,0 +1,85 @@
+# 心智协同合同协作系统 - Docker Compose 统一编排
+# 公网仅映射 frontend:80；其余服务走内部网络
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: contract-hub-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-contract_manager}
+      MYSQL_USER: ${MYSQL_USER:-contract}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./deploy/mysql/init/00-bootstrap.sh:/docker-entrypoint-initdb.d/00-bootstrap.sh:ro
+      - ./sql:/sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks:
+      - contract-net
+
+  document-engine:
+    build:
+      context: ./document-engine
+      dockerfile: Dockerfile
+    container_name: contract-hub-document-engine
+    restart: unless-stopped
+    networks:
+      - contract-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: contract-hub-backend
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8080"
+      GIN_MODE: ${GIN_MODE:-release}
+      MYSQL_DSN: ${MYSQL_USER:-contract}:${MYSQL_PASSWORD}@tcp(mysql:3306)/${MYSQL_DATABASE:-contract_manager}?charset=utf8mb4&parseTime=True&loc=Local
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-24}
+      DOC_ENGINE_BASE_URL: http://document-engine:9002
+      PUBLIC_WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN:-http://122.51.86.159}
+      OSS_ENDPOINT: ${OSS_ENDPOINT:-oss-cn-qingdao.aliyuncs.com}
+      OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID}
+      OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET}
+      OSS_BUCKET: ${OSS_BUCKET:-contract-hub}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      document-engine:
+        condition: service_started
+    networks:
+      - contract-net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: contract-hub-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - contract-net
+
+volumes:
+  mysql_data:
+
+networks:
+  contract-net:
+    driver: bridge

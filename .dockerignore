@@ -1,0 +1,11 @@
+# 前端构建 context 为仓库根目录时忽略无关内容
+.git
+.env
+.env.*
+backend
+document-engine
+docs
+sql
+**/*.md
+frontend/node_modules
+frontend/dist

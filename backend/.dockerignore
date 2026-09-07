@@ -1,0 +1,6 @@
+# 减小 Go 构建上下文
+.git
+.gitignore
+.env
+.env.*
+*.md

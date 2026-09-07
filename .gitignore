@@ -1,0 +1,20 @@
+# 本地 / 部署敏感配置
+.env
+.env.local
+**/.env
+**/.env.local
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+
+# 构建产物
+frontend/dist/
+backend/server
+*.exe
+
+# Python
+document-engine/venv/
+**/__pycache__/
+*.pyc
