@@ -39,6 +39,7 @@ const DefaultResetPassword = "12345678"
 type AuthService struct {
 	users       *repository.UserRepository
 	invites     *repository.InviteCodeRepository
+	sessions    *repository.SessionRepository
 	captcha     *auth.CaptchaStore
 	loginFails  *auth.LoginFailStore
 	jwtSecret   string
@@ -49,6 +50,7 @@ type AuthService struct {
 func NewAuthService(
 	users *repository.UserRepository,
 	invites *repository.InviteCodeRepository,
+	sessions *repository.SessionRepository,
 	captcha *auth.CaptchaStore,
 	loginFails *auth.LoginFailStore,
 	jwtSecret string,
@@ -57,6 +59,7 @@ func NewAuthService(
 	return &AuthService{
 		users:       users,
 		invites:     invites,
+		sessions:    sessions,
 		captcha:     captcha,
 		loginFails:  loginFails,
 		jwtSecret:   jwtSecret,
@@ -95,11 +98,19 @@ type UserVO struct {
 	CreateTime time.Time `json:"create_time"`
 }
 
+// PreviousLoginVO 上次登录摘要。
+type PreviousLoginVO struct {
+	LoginTime time.Time `json:"login_time"`
+	LoginIP   string    `json:"login_ip,omitempty"`
+	Device    string    `json:"device,omitempty"`
+}
+
 // LoginResult 登录成功返回 token 和用户信息。
 type LoginResult struct {
-	Token     string    `json:"token"`
-	ExpiresAt time.Time `json:"expires_at"`
-	User      UserVO    `json:"user"`
+	Token          string           `json:"token"`
+	ExpiresAt      time.Time        `json:"expires_at"`
+	User           UserVO           `json:"user"`
+	PreviousLogin  *PreviousLoginVO `json:"previous_login,omitempty"`
 }
 
 // LoginFailInfo 登录失败附加信息。
@@ -181,8 +192,8 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*UserV
 	return toUserVO(user), nil
 }
 
-// Login 校验用户名密码，成功则返回 JWT。
-func (s *AuthService) Login(ctx context.Context, input LoginInput, ip string) (*LoginResult, *LoginFailInfo, error) {
+// Login 校验用户名密码，成功则返回 JWT（单点：踢掉旧会话）。
+func (s *AuthService) Login(ctx context.Context, input LoginInput, ip, userAgent string) (*LoginResult, *LoginFailInfo, error) {
 	input.Username = strings.TrimSpace(input.Username)
 	input.Password = strings.TrimSpace(input.Password)
 
@@ -216,19 +227,113 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput, ip string) (*
 
 	s.loginFails.Reset(input.Username, ip)
 
-	loginTime := time.Now()
-	_ = s.users.UpdateLastLogin(ctx, user.ID, loginTime, ip)
+	var previous *PreviousLoginVO
+	if user.LastLoginTime != nil {
+		previous = &PreviousLoginVO{
+			LoginTime: *user.LastLoginTime,
+			LoginIP:   user.LastLoginIP,
+			Device:    user.LastLoginDevice,
+		}
+	}
 
-	token, expiresAt, err := auth.GenerateToken(user.ID, user.Username, user.Role, s.jwtSecret, s.tokenExpire)
+	loginTime := time.Now()
+	device := auth.DeviceLabelFromUA(userAgent)
+	sid, err := randomSessionToken()
+	if err != nil {
+		return nil, nil, err
+	}
+	sessionID := nextID()
+
+	// 后来者优先：先踢旧会话
+	_ = s.sessions.RevokeActiveByUser(ctx, user.ID, model.SessionRevokeReplaced, loginTime)
+
+	session := &model.UserSession{
+		ID:           sessionID,
+		UserID:       user.ID,
+		SessionToken: sid,
+		LoginIP:      ip,
+		UserAgent:    userAgent,
+		DeviceLabel:  device,
+		Status:       model.SessionStatusActive,
+		LoginTime:    loginTime,
+		LastSeenTime: &loginTime,
+	}
+	if err := s.sessions.CreateSession(ctx, session); err != nil {
+		return nil, nil, err
+	}
+	_ = s.sessions.InsertLoginLog(ctx, &model.UserLoginLog{
+		ID:          nextID(),
+		UserID:      user.ID,
+		SessionID:   &sessionID,
+		LoginIP:     ip,
+		UserAgent:   userAgent,
+		DeviceLabel: device,
+		LoginTime:   loginTime,
+		Result:      1,
+	})
+	_ = s.users.UpdateLastLogin(ctx, user.ID, loginTime, ip, device)
+
+	token, expiresAt, err := auth.GenerateToken(user.ID, user.Username, user.Role, sid, s.jwtSecret, s.tokenExpire)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	return &LoginResult{
-		Token:     token,
-		ExpiresAt: expiresAt,
-		User:      *toUserVO(user),
+		Token:         token,
+		ExpiresAt:     expiresAt,
+		User:          *toUserVO(user),
+		PreviousLogin: previous,
 	}, nil, nil
+}
+
+// Logout 注销当前会话。
+func (s *AuthService) Logout(ctx context.Context, sessionID string) error {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return nil
+	}
+	return s.sessions.RevokeByToken(ctx, sessionID, model.SessionRevokeLogout, time.Now())
+}
+
+// AssertSessionActive 校验 JWT 内 sid 对应会话是否仍有效。
+func (s *AuthService) AssertSessionActive(ctx context.Context, userID int64, sessionID string) error {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		// 旧 Token 无 sid：强制重新登录
+		return auth.ErrSessionInvalid
+	}
+	ok, err := s.sessions.IsActiveSession(ctx, userID, sessionID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return auth.ErrSessionReplaced
+	}
+	return nil
+}
+
+// RevokeAllSessions 封禁等场景下踢掉全部会话。
+func (s *AuthService) RevokeAllSessions(ctx context.Context, userID int64, reason string) error {
+	return s.sessions.RevokeActiveByUser(ctx, userID, reason, time.Now())
+}
+
+func randomSessionToken() (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	out := make([]byte, 32)
+	for i := 0; i < 32; i++ {
+		out[i] = alphabet[buf[i%16]%byte(len(alphabet))]
+	}
+	// 再读一轮提高熵
+	if _, err := rand.Read(buf); err == nil {
+		for i := 0; i < 16; i++ {
+			out[16+i] = alphabet[buf[i]%byte(len(alphabet))]
+		}
+	}
+	return string(out), nil
 }
 
 // CreateCaptcha 生成图形验证码。
@@ -295,13 +400,14 @@ func (s *AuthService) EnsureSeedAdmin(ctx context.Context) error {
 
 // AdminService 管理员用户与邀请码业务。
 type AdminService struct {
-	users   *repository.UserRepository
-	invites *repository.InviteCodeRepository
+	users    *repository.UserRepository
+	invites  *repository.InviteCodeRepository
+	sessions *repository.SessionRepository
 }
 
 // NewAdminService 创建管理员服务。
-func NewAdminService(users *repository.UserRepository, invites *repository.InviteCodeRepository) *AdminService {
-	return &AdminService{users: users, invites: invites}
+func NewAdminService(users *repository.UserRepository, invites *repository.InviteCodeRepository, sessions *repository.SessionRepository) *AdminService {
+	return &AdminService{users: users, invites: invites, sessions: sessions}
 }
 
 // AdminUserListQuery 用户列表查询。
@@ -383,7 +489,14 @@ func (s *AdminService) changeStatus(ctx context.Context, operatorID, targetID in
 			return ErrLastAdmin
 		}
 	}
-	return s.users.UpdateStatus(ctx, targetID, status)
+	if err := s.users.UpdateStatus(ctx, targetID, status); err != nil {
+		return err
+	}
+	if status == model.UserStatusBanned || status == model.UserStatusDeleted {
+		reason := model.SessionRevokeBan
+		_ = s.sessions.RevokeActiveByUser(ctx, targetID, reason, time.Now())
+	}
+	return nil
 }
 
 // InviteCodeVO 邀请码视图。

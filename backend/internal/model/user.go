@@ -13,10 +13,11 @@ type SysUser struct {
 	AvatarURL     string
 	Status        int8 // 0封禁 1正常 2软删除
 	Role          int8 // 0普通 1管理员
-	LastLoginTime *time.Time
-	LastLoginIP   string
-	CreateTime    time.Time
-	UpdateTime    time.Time
+	LastLoginTime   *time.Time
+	LastLoginIP     string
+	LastLoginDevice string
+	CreateTime      time.Time
+	UpdateTime      time.Time
 }
 
 // 用户状态常量。

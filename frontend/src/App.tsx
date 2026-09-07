@@ -10,7 +10,6 @@ import CustomerListPage from './pages/Customers/CustomerListPage'
 import CustomerDetailPage from './pages/Customers/CustomerDetailPage'
 import SharePage from './pages/Share/SharePage'
 import VerifyPage from './pages/Verify/VerifyPage'
-import PlaceholderPage from './pages/Placeholder/PlaceholderPage'
 import WatermarkSettingsPage from './pages/Settings/WatermarkSettingsPage'
 import SealSettingsPage from './pages/Settings/SealSettingsPage'
 import AdminUsersPage from './pages/Admin/AdminUsersPage'
@@ -42,10 +41,9 @@ function RequireAdmin({ children }: { children: ReactNode }) {
  * 应用路由配置。
  * - /login          登录页（公开）
  * - /               首页（需登录，主布局内）
- * - /contracts      合同管理列表页（需登录，主布局内）
- * - /contracts/:id  合同详情 / 在线编辑页（需登录，主布局内）
+ * - /contracts/:id  合同详情（需登录；列表入口已隐藏，深链保留）
  * - /share/:token   外部协作者访问页（公开，免登录，不套主布局）
- * - /customers /settings /statistics 其他菜单（暂为占位页）
+ * - /customers /settings 客户与合同设置
  */
 export default function App() {
   return (
@@ -73,12 +71,7 @@ export default function App() {
         <Route path="/settings" element={<Navigate to="/settings/watermark" replace />} />
         <Route path="/settings/watermark" element={<WatermarkSettingsPage />} />
         <Route path="/settings/seal" element={<SealSettingsPage />} />
-        <Route
-          path="/statistics"
-          element={
-            <PlaceholderPage title="数据统计" description="合同数量与业务数据汇总" />
-          }
-        />
+        <Route path="/statistics" element={<Navigate to="/" replace />} />
         <Route
           path="/admin/users"
           element={

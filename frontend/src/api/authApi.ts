@@ -30,6 +30,11 @@ export function getMe(): Promise<UserVO> {
   return requestTyped<UserVO>({ url: '/auth/me', method: 'get' })
 }
 
+/** 退出登录（注销服务端会话）。 */
+export function logout(): Promise<void> {
+  return requestTyped<void>({ url: '/auth/logout', method: 'post', skipErrorToast: true })
+}
+
 /** 获取图形验证码。 */
 export function getCaptcha(): Promise<CaptchaPayload> {
   return requestTyped<CaptchaPayload>({ url: '/auth/captcha', method: 'get' })

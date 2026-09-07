@@ -73,6 +73,18 @@ export function deleteContract(id: number): Promise<void> {
   })
 }
 
+/** 重命名合同 */
+export function updateContractMeta(
+  id: number,
+  data: { contract_name: string },
+): Promise<void> {
+  return requestTyped<void>({
+    url: `/contracts/${id}`,
+    method: 'put',
+    data,
+  })
+}
+
 /**
  * 批量删除合同。
  * @param ids 合同 ID 列表

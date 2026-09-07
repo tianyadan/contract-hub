@@ -2,6 +2,7 @@ import axios from 'axios'
 import type { AxiosError, AxiosRequestConfig } from 'axios'
 import { getToken, clearAuth } from '../utils/token'
 import { getMessageApi } from '../utils/message'
+import { notifySessionKicked } from '../utils/sessionKick'
 import type { ApiResponse } from '../types/auth'
 import type { VersionConflictPayload } from '../utils/conflictResolve'
 
@@ -49,18 +50,36 @@ request.interceptors.response.use(
       return response.data
     }
     if (body.code !== 0) {
+      // 被其他设备挤下线
+      if (body.code === 40105 && !window.location.pathname.startsWith('/login')) {
+        notifySessionKicked(body.message || '账号已在其他设备登录')
+        return Promise.reject(new Error(body.message))
+      }
       // 展示后端返回的错误信息
-      getMessageApi().error(body.message || '请求失败，请稍后重试')
+      if (!response.config.skipErrorToast) {
+        getMessageApi().error(body.message || '请求失败，请稍后重试')
+      }
       return Promise.reject(new Error(body.message))
     }
     return body.data
   },
   (error: AxiosError<ApiResponse<unknown>>) => {
     const status = error.response?.status
-    const bodyMessage = error.response?.data?.message
+    const body = error.response?.data
+    const bodyMessage = body?.message
+    const bizCode = body?.code
+
+    // 单点登录：被挤下线（HTTP 401 + code 40105）
+    if (
+      status === 401 &&
+      bizCode === 40105 &&
+      !window.location.pathname.startsWith('/login')
+    ) {
+      notifySessionKicked(bodyMessage || '账号已在其他设备登录')
+      return Promise.reject(error)
+    }
 
     // 401 且不在登录页：视为令牌过期，清除登录态并跳回登录页
-    // （登录接口失败同样是 401，但此时在登录页，直接展示后端提示即可）
     if (status === 401 && !window.location.pathname.startsWith('/login')) {
       clearAuth()
       getMessageApi().warning('登录已过期，请重新登录')

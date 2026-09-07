@@ -37,7 +37,7 @@ status, role, last_login_time, last_login_ip, create_time, update_time
 func (r *UserRepository) GetByUsername(ctx context.Context, username string) (*model.SysUser, error) {
 	row := r.db.QueryRowContext(ctx, `
 SELECT id, username, password, nickname, phone, email, avatar_url,
-       status, role, last_login_time, last_login_ip, create_time, update_time
+       status, role, last_login_time, last_login_ip, last_login_device, create_time, update_time
 FROM sys_user
 WHERE username = ?
 `, username)
@@ -48,20 +48,20 @@ WHERE username = ?
 func (r *UserRepository) GetByID(ctx context.Context, id int64) (*model.SysUser, error) {
 	row := r.db.QueryRowContext(ctx, `
 SELECT id, username, password, nickname, phone, email, avatar_url,
-       status, role, last_login_time, last_login_ip, create_time, update_time
+       status, role, last_login_time, last_login_ip, last_login_device, create_time, update_time
 FROM sys_user
 WHERE id = ?
 `, id)
 	return scanUser(row)
 }
 
-// UpdateLastLogin 更新用户最后登录时间和 IP。
-func (r *UserRepository) UpdateLastLogin(ctx context.Context, userID int64, loginTime time.Time, ip string) error {
+// UpdateLastLogin 更新用户最后登录时间、IP 与设备。
+func (r *UserRepository) UpdateLastLogin(ctx context.Context, userID int64, loginTime time.Time, ip, device string) error {
 	_, err := r.db.ExecContext(ctx, `
 UPDATE sys_user
-SET last_login_time = ?, last_login_ip = ?
+SET last_login_time = ?, last_login_ip = ?, last_login_device = ?
 WHERE id = ?
-`, loginTime, nullString(ip), userID)
+`, loginTime, nullString(ip), nullString(device), userID)
 	return err
 }
 
@@ -122,7 +122,7 @@ func (r *UserRepository) ListUsers(ctx context.Context, keyword string, status *
 	offset := (page - 1) * pageSize
 	listSQL := fmt.Sprintf(`
 SELECT id, username, password, nickname, phone, email, avatar_url,
-       status, role, last_login_time, last_login_ip, create_time, update_time
+       status, role, last_login_time, last_login_ip, last_login_device, create_time, update_time
 FROM sys_user
 WHERE %s
 ORDER BY create_time DESC
@@ -157,18 +157,19 @@ func nullString(s string) interface{} {
 // scanUser 扫描一行 sys_user。
 func scanUser(row *sql.Row) (*model.SysUser, error) {
 	var (
-		u             model.SysUser
-		nickname      sql.NullString
-		phone         sql.NullString
-		email         sql.NullString
-		avatarURL     sql.NullString
-		lastLoginTime sql.NullTime
-		lastLoginIP   sql.NullString
+		u               model.SysUser
+		nickname        sql.NullString
+		phone           sql.NullString
+		email           sql.NullString
+		avatarURL       sql.NullString
+		lastLoginTime   sql.NullTime
+		lastLoginIP     sql.NullString
+		lastLoginDevice sql.NullString
 	)
 	err := row.Scan(
 		&u.ID, &u.Username, &u.Password,
 		&nickname, &phone, &email, &avatarURL,
-		&u.Status, &u.Role, &lastLoginTime, &lastLoginIP,
+		&u.Status, &u.Role, &lastLoginTime, &lastLoginIP, &lastLoginDevice,
 		&u.CreateTime, &u.UpdateTime,
 	)
 	if err != nil {
@@ -182,6 +183,7 @@ func scanUser(row *sql.Row) (*model.SysUser, error) {
 	u.Email = email.String
 	u.AvatarURL = avatarURL.String
 	u.LastLoginIP = lastLoginIP.String
+	u.LastLoginDevice = lastLoginDevice.String
 	if lastLoginTime.Valid {
 		u.LastLoginTime = &lastLoginTime.Time
 	}
@@ -191,18 +193,19 @@ func scanUser(row *sql.Row) (*model.SysUser, error) {
 // scanUserRows 从 Rows 扫描用户。
 func scanUserRows(rows *sql.Rows) (*model.SysUser, error) {
 	var (
-		u             model.SysUser
-		nickname      sql.NullString
-		phone         sql.NullString
-		email         sql.NullString
-		avatarURL     sql.NullString
-		lastLoginTime sql.NullTime
-		lastLoginIP   sql.NullString
+		u               model.SysUser
+		nickname        sql.NullString
+		phone           sql.NullString
+		email           sql.NullString
+		avatarURL       sql.NullString
+		lastLoginTime   sql.NullTime
+		lastLoginIP     sql.NullString
+		lastLoginDevice sql.NullString
 	)
 	err := rows.Scan(
 		&u.ID, &u.Username, &u.Password,
 		&nickname, &phone, &email, &avatarURL,
-		&u.Status, &u.Role, &lastLoginTime, &lastLoginIP,
+		&u.Status, &u.Role, &lastLoginTime, &lastLoginIP, &lastLoginDevice,
 		&u.CreateTime, &u.UpdateTime,
 	)
 	if err != nil {
@@ -213,6 +216,7 @@ func scanUserRows(rows *sql.Rows) (*model.SysUser, error) {
 	u.Email = email.String
 	u.AvatarURL = avatarURL.String
 	u.LastLoginIP = lastLoginIP.String
+	u.LastLoginDevice = lastLoginDevice.String
 	if lastLoginTime.Valid {
 		u.LastLoginTime = &lastLoginTime.Time
 	}

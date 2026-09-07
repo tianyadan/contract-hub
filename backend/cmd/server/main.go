@@ -50,14 +50,15 @@ func main() {
 	// 4. 初始化依赖：仓库 -> 服务 -> Handler
 	userRepo := repository.NewUserRepository(db)
 	inviteRepo := repository.NewInviteCodeRepository(db)
+	sessionRepo := repository.NewSessionRepository(db)
 	captchaStore := auth.NewCaptchaStore()
 	loginFailStore := auth.NewLoginFailStore()
-	authService := service.NewAuthService(userRepo, inviteRepo, captchaStore, loginFailStore, cfg.JWTSecret, time.Duration(cfg.JWTExpireHours)*time.Hour)
+	authService := service.NewAuthService(userRepo, inviteRepo, sessionRepo, captchaStore, loginFailStore, cfg.JWTSecret, time.Duration(cfg.JWTExpireHours)*time.Hour)
 	if err := authService.EnsureSeedAdmin(context.Background()); err != nil {
 		log.Fatalf("seed admin failed: %v", err)
 	}
 	authHandler := handler.NewAuthHandler(authService)
-	adminService := service.NewAdminService(userRepo, inviteRepo)
+	adminService := service.NewAdminService(userRepo, inviteRepo, sessionRepo)
 	adminHandler := handler.NewAdminHandler(adminService)
 
 	contractRepo := repository.NewContractRepository(db)

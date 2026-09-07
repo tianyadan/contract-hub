@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { App, Button, Card, Col, Input, Row, Space, Tag, Typography } from 'antd'
-import { ArrowLeftOutlined, HistoryOutlined, SaveOutlined } from '@ant-design/icons'
-import { getTemplateDetail, saveTemplateContent } from '../../api/templateApi'
+import { App, Button, Card, Col, Form, Input, Modal, Row, Space, Tag, Typography } from 'antd'
+import { ArrowLeftOutlined, EditOutlined, HistoryOutlined, SaveOutlined } from '@ant-design/icons'
+import { getTemplateDetail, saveTemplateContent, updateTemplateMeta } from '../../api/templateApi'
 import {
   createTemplateFidelitySnapshot,
   fetchTemplateFidelitySnapshotPdf,
@@ -39,6 +39,8 @@ export default function TemplateDetailPage() {
   const [changeSummary, setChangeSummary] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameForm] = Form.useForm<{ template_name: string; description?: string }>()
   const { activeText: watermarkText, activeStyle: watermarkStyle } = useWatermarkSetting()
 
   /** 加载模板详情（与合同详情相同：normalizeDocumentContent） */
@@ -99,6 +101,28 @@ export default function TemplateDetailPage() {
     setDocumentContent(content)
   }
 
+  /** 打开重命名弹窗 */
+  const openRename = () => {
+    if (!detail) return
+    renameForm.setFieldsValue({
+      template_name: detail.template_name,
+      description: detail.description,
+    })
+    setRenameOpen(true)
+  }
+
+  /** 提交模板重命名 */
+  const handleRename = async () => {
+    const values = await renameForm.validateFields()
+    await updateTemplateMeta(templateId, {
+      template_name: values.template_name.trim(),
+      description: values.description?.trim(),
+    })
+    message.success('模板已重命名')
+    setRenameOpen(false)
+    await loadData()
+  }
+
   /** 保存模板（与合同 saveVersion 相同：写入 web_canvas 快照） */
   const handleSave = async () => {
     if (document.activeElement instanceof HTMLElement) {
@@ -150,6 +174,9 @@ export default function TemplateDetailPage() {
           </div>
         </div>
         <div className="contract-detail__header-actions">
+          <Button icon={<EditOutlined />} onClick={openRename}>
+            重命名
+          </Button>
           <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>
             保存模板
           </Button>
@@ -228,6 +255,27 @@ export default function TemplateDetailPage() {
         title={fidelity.previewTitle}
         onClose={() => fidelity.setPreviewOpen()}
       />
+
+      <Modal
+        title="重命名模板"
+        open={renameOpen}
+        onCancel={() => setRenameOpen(false)}
+        onOk={() => void handleRename()}
+        destroyOnHidden
+      >
+        <Form form={renameForm} layout="vertical">
+          <Form.Item
+            name="template_name"
+            label="模板名称"
+            rules={[{ required: true, message: '请输入模板名称' }]}
+          >
+            <Input maxLength={255} />
+          </Form.Item>
+          <Form.Item name="description" label="模板说明">
+            <Input.TextArea rows={2} maxLength={500} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   )
 }

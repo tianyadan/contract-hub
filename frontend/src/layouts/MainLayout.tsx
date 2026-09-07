@@ -13,9 +13,7 @@ import {
 } from 'antd'
 import type { MenuProps } from 'antd'
 import {
-  BarChartOutlined,
   DownOutlined,
-  FileTextOutlined,
   FolderOpenOutlined,
   HomeOutlined,
   KeyOutlined,
@@ -28,6 +26,7 @@ import {
 } from '@ant-design/icons'
 import BrandLogo from '../components/BrandLogo'
 import { useIsMobile } from '../hooks/useMediaQuery'
+import { logout } from '../api/authApi'
 import { clearAuth, getStoredUser } from '../utils/token'
 import './main-layout.css'
 
@@ -39,7 +38,7 @@ function buildMenuItems(isAdmin: boolean): MenuProps['items'] {
     { key: '/', label: '首页', icon: <HomeOutlined /> },
     { key: '/customers', label: '客户管理', icon: <TeamOutlined /> },
     { key: '/templates', label: '模板池', icon: <FolderOpenOutlined /> },
-    { key: '/contracts', label: '合同管理', icon: <FileTextOutlined /> },
+    // 「合同管理」「数据统计」已隐藏/下线，入口收敛到客户管理与首页
     {
       key: '/settings',
       label: '合同设置',
@@ -49,7 +48,6 @@ function buildMenuItems(isAdmin: boolean): MenuProps['items'] {
         { key: '/settings/seal', label: '电子章' },
       ],
     },
-    { key: '/statistics', label: '数据统计', icon: <BarChartOutlined /> },
   ]
   if (isAdmin) {
     items.push({
@@ -131,7 +129,12 @@ export default function MainLayout() {
     if (isMobile) setDrawerOpen(false)
   }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await logout()
+    } catch {
+      // 会话可能已失效，仍清理本地态
+    }
     clearAuth()
     message.success('已退出登录')
     navigate('/login', { replace: true })

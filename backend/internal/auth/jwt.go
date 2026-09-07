@@ -9,23 +9,26 @@ import (
 
 // UserClaims 是登录后 JWT 中携带的用户信息。
 type UserClaims struct {
-	UserID   int64  `json:"user_id"`
-	Username string `json:"username"`
-	Role     int8   `json:"role"`
+	UserID    int64  `json:"user_id"`
+	Username  string `json:"username"`
+	Role      int8   `json:"role"`
+	SessionID string `json:"sid"`
 	jwt.RegisteredClaims
 }
 
 // GenerateToken 生成 HS256 签名 JWT，返回 token 字符串和过期时间。
-func GenerateToken(userID int64, username string, role int8, secret string, expire time.Duration) (string, time.Time, error) {
+func GenerateToken(userID int64, username string, role int8, sessionID, secret string, expire time.Duration) (string, time.Time, error) {
 	now := time.Now()
 	expiresAt := now.Add(expire)
 
 	claims := UserClaims{
-		UserID:   userID,
-		Username: username,
-		Role:     role,
+		UserID:    userID,
+		Username:  username,
+		Role:      role,
+		SessionID: sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   username,
+			ID:        sessionID,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 		},

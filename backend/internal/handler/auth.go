@@ -75,7 +75,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		Password:    req.Password,
 		CaptchaID:   req.CaptchaID,
 		CaptchaCode: req.CaptchaCode,
-	}, c.ClientIP())
+	}, c.ClientIP(), c.Request.UserAgent())
 	if err != nil {
 		writeAuthError(c, err, failInfo)
 		return
@@ -102,6 +102,17 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		return
 	}
 	response.Success(c, http.StatusOK, "ok", user)
+}
+
+// Logout 注销当前会话。
+func (h *AuthHandler) Logout(c *gin.Context) {
+	_ = h.svc.Logout(c.Request.Context(), middleware.GetSessionID(c))
+	response.Success(c, http.StatusOK, "已退出登录", nil)
+}
+
+// SessionValidator 供路由中间件校验会话。
+func (h *AuthHandler) SessionValidator() middleware.SessionValidator {
+	return h.svc.AssertSessionActive
 }
 
 // writeAuthError 将 service 层错误转换为统一 HTTP 响应。

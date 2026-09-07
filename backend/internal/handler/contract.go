@@ -165,6 +165,39 @@ func (h *ContractHandler) Detail(c *gin.Context) {
 	response.Success(c, http.StatusOK, "ok", detail)
 }
 
+// UpdateMetaRequest 更新合同元数据请求体。
+type UpdateMetaRequest struct {
+	ContractName string `json:"contract_name"`
+}
+
+// UpdateMeta 重命名合同。
+func (h *ContractHandler) UpdateMeta(c *gin.Context) {
+	contractID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || contractID <= 0 {
+		response.Error(c, http.StatusBadRequest, 40001, "合同ID不合法")
+		return
+	}
+	var req UpdateMetaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, 40001, "请求参数格式错误")
+		return
+	}
+	err = h.svc.RenameContract(
+		c.Request.Context(),
+		contractID,
+		middleware.GetUserID(c),
+		req.ContractName,
+		middleware.GetUsername(c),
+		c.ClientIP(),
+		c.Request.UserAgent(),
+	)
+	if err != nil {
+		writeContractError(c, err)
+		return
+	}
+	response.Success(c, http.StatusOK, "已重命名", nil)
+}
+
 // Preview 合同 DOCX 高保真预览流。
 func (h *ContractHandler) Preview(c *gin.Context) {
 	contractID, err := strconv.ParseInt(c.Param("id"), 10, 64)

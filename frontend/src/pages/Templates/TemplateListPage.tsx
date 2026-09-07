@@ -17,11 +17,12 @@ import {
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { UploadFile } from 'antd'
-import { DeleteOutlined, EyeOutlined, InboxOutlined, PlusOutlined } from '@ant-design/icons'
+import { DeleteOutlined, EditOutlined, EyeOutlined, InboxOutlined, PlusOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import {
   deleteTemplate,
   getTemplateList,
+  updateTemplateMeta,
   uploadTemplate,
 } from '../../api/templateApi'
 import type { TemplateListItem } from '../../types/template'
@@ -48,8 +49,11 @@ export default function TemplateListPage() {
 
   const [uploadOpen, setUploadOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renaming, setRenaming] = useState<TemplateListItem | null>(null)
   const [fileList, setFileList] = useState<UploadFile[]>([])
   const [form] = Form.useForm<{ template_name: string; description?: string }>()
+  const [renameForm] = Form.useForm<{ template_name: string; description?: string }>()
 
   /** 加载模板列表 */
   const loadList = useCallback(async () => {
@@ -109,6 +113,30 @@ export default function TemplateListPage() {
     loadList()
   }
 
+  /** 打开重命名弹窗 */
+  const openRename = (item: TemplateListItem) => {
+    setRenaming(item)
+    renameForm.setFieldsValue({
+      template_name: item.template_name,
+      description: item.description,
+    })
+    setRenameOpen(true)
+  }
+
+  /** 提交模板重命名 */
+  const handleRename = async () => {
+    if (!renaming) return
+    const values = await renameForm.validateFields()
+    await updateTemplateMeta(renaming.id, {
+      template_name: values.template_name.trim(),
+      description: values.description?.trim(),
+    })
+    message.success('模板已重命名')
+    setRenameOpen(false)
+    setRenaming(null)
+    loadList()
+  }
+
   const columns: ColumnsType<TemplateListItem> = [
     {
       title: '模板名称',
@@ -144,7 +172,7 @@ export default function TemplateListPage() {
     {
       title: '操作',
       key: 'action',
-      width: 160,
+      width: 220,
       render: (_, record) => (
         <Space>
           <Button
@@ -154,6 +182,9 @@ export default function TemplateListPage() {
             onClick={() => navigate(`/templates/${record.id}`)}
           >
             预览
+          </Button>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openRename(record)}>
+            重命名
           </Button>
           <Popconfirm title="确定删除该模板？" onConfirm={() => void handleDelete(record.id)}>
             <Button type="link" size="small" danger icon={<DeleteOutlined />}>
@@ -212,6 +243,14 @@ export default function TemplateListPage() {
                   onClick={() => navigate(`/templates/${item.id}`)}
                 >
                   预览
+                </Button>
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<EditOutlined />}
+                  onClick={() => openRename(item)}
+                >
+                  重命名
                 </Button>
                 <Popconfirm title="确定删除该模板？" onConfirm={() => void handleDelete(item.id)}>
                   <Button type="link" size="small" danger icon={<DeleteOutlined />}>
@@ -327,6 +366,32 @@ export default function TemplateListPage() {
               </p>
               <p className="ant-upload-text">点击或拖拽 DOCX 到此处</p>
             </Upload.Dragger>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="重命名模板"
+        open={renameOpen}
+        onCancel={() => {
+          setRenameOpen(false)
+          setRenaming(null)
+        }}
+        onOk={() => void handleRename()}
+        destroyOnHidden
+        width={isMobile ? '100%' : 480}
+        style={isMobile ? { top: 16, maxWidth: 'calc(100vw - 24px)' } : undefined}
+      >
+        <Form form={renameForm} layout="vertical">
+          <Form.Item
+            name="template_name"
+            label="模板名称"
+            rules={[{ required: true, message: '请输入模板名称' }]}
+          >
+            <Input maxLength={255} />
+          </Form.Item>
+          <Form.Item name="description" label="模板说明">
+            <Input.TextArea rows={2} maxLength={500} />
           </Form.Item>
         </Form>
       </Modal>

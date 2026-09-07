@@ -49,6 +49,15 @@ export interface LoginResult {
   token: string
   expires_at: string
   user: UserVO
+  /** 上次登录摘要（首次登录无） */
+  previous_login?: PreviousLoginInfo
+}
+
+/** 上次登录信息 */
+export interface PreviousLoginInfo {
+  login_time: string
+  login_ip?: string
+  device?: string
 }
 
 /** 图形验证码 */

@@ -33,6 +33,8 @@ func New(
 	// 使用 Gin 自带的 Logger 和 Recovery，并加入 RequestID 中间件
 	r.Use(gin.Logger(), gin.Recovery(), middleware.RequestID())
 
+	sessionCheck := authHandler.SessionValidator()
+
 	// Swagger 接口文档：http://localhost:8080/swagger/index.html
 	// docs 目录由 swag init 自动生成，后续新增接口后需要重新生成
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -48,6 +50,9 @@ func New(
 		// 公开验真（无需 JWT）
 		api.GET("/public/verify/:code", publicHandler.VerifyContract)
 
+		jwtAuth := middleware.JWTAuth(cfg.JWTSecret, sessionCheck)
+		jwtFlex := middleware.JWTAuthFlexible(cfg.JWTSecret, sessionCheck)
+
 		// 认证相关接口
 		authGroup := api.Group("/auth")
 		{
@@ -56,11 +61,12 @@ func New(
 			authGroup.GET("/captcha", authHandler.Captcha)
 
 			// 需要登录后携带 JWT 访问
-			authGroup.GET("/me", middleware.JWTAuth(cfg.JWTSecret), authHandler.Me)
+			authGroup.GET("/me", jwtAuth, authHandler.Me)
+			authGroup.POST("/logout", jwtAuth, authHandler.Logout)
 		}
 
 		// 管理员接口
-		adminGroup := api.Group("/admin", middleware.JWTAuth(cfg.JWTSecret), middleware.RequireAdmin())
+		adminGroup := api.Group("/admin", jwtAuth, middleware.RequireAdmin())
 		{
 			adminGroup.GET("/users", adminHandler.ListUsers)
 			adminGroup.POST("/users/:id/ban", adminHandler.BanUser)
@@ -72,7 +78,7 @@ func New(
 		}
 
 		// 合同设置（用户级）
-		settings := api.Group("/settings", middleware.JWTAuth(cfg.JWTSecret))
+		settings := api.Group("/settings", jwtAuth)
 		{
 			settings.GET("/watermark", settingsHandler.GetWatermark)
 			settings.PUT("/watermark", settingsHandler.SaveWatermark)
@@ -84,12 +90,12 @@ func New(
 		// 电子章图片：允许 query token，供 <img> 加载私有 OSS 对象
 		api.GET(
 			"/settings/seals/:id/image",
-			middleware.JWTAuthFlexible(cfg.JWTSecret),
+			jwtFlex,
 			settingsHandler.StreamSealImage,
 		)
 
 		// 合同模板池
-		templates := api.Group("/templates", middleware.JWTAuth(cfg.JWTSecret))
+		templates := api.Group("/templates", jwtAuth)
 		{
 			templates.POST("/upload", templateHandler.Upload)
 			templates.GET("", templateHandler.List)
@@ -106,7 +112,7 @@ func New(
 		}
 
 		// 客户管理
-		customers := api.Group("/customers", middleware.JWTAuth(cfg.JWTSecret))
+		customers := api.Group("/customers", jwtAuth)
 		{
 			customers.POST("", customerHandler.Create)
 			customers.GET("", customerHandler.List)
@@ -118,12 +124,13 @@ func New(
 		}
 
 		// 合同相关接口，均需要登录
-		contracts := api.Group("/contracts", middleware.JWTAuth(cfg.JWTSecret))
+		contracts := api.Group("/contracts", jwtAuth)
 		{
 			contracts.POST("", contractHandler.Create)
 			contracts.GET("", contractHandler.List)
 			contracts.DELETE("", contractHandler.BatchDelete)
 			contracts.GET("/:id", contractHandler.Detail)
+			contracts.PUT("/:id", contractHandler.UpdateMeta)
 			contracts.GET("/:id/preview", contractHandler.Preview)
 			contracts.DELETE("/:id", contractHandler.Delete)
 
@@ -155,7 +162,7 @@ func New(
 		// 合同电子章图片：允许 query token，供 <img> 加载
 		api.GET(
 			"/contracts/:id/seals/image",
-			middleware.JWTAuthFlexible(cfg.JWTSecret),
+			jwtFlex,
 			contractHandler.StreamContractSeal,
 		)
 

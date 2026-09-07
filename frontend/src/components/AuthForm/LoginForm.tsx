@@ -74,7 +74,14 @@ export default function LoginForm({ initialUsername }: LoginFormProps) {
       setStoredUser(result.user)
       setRememberedUsername(values.remember ? values.username : '')
       setFailCount(0)
-      message.success('登录成功')
+      if (result.previous_login?.login_time) {
+        const prev = result.previous_login
+        const when = new Date(prev.login_time).toLocaleString()
+        const bits = [when, prev.device, prev.login_ip].filter(Boolean)
+        message.success(`登录成功。上次登录：${bits.join(' · ')}`)
+      } else {
+        message.success('登录成功')
+      }
       navigate('/')
     } catch (error) {
       const info = getLoginFailInfo(error)

@@ -200,6 +200,38 @@ func (r *ContractRepository) UpdateContractStatus(ctx context.Context, contractI
 	return err
 }
 
+// UpdateContractNameByOwner 更新当前用户名下合同名称。
+func (r *ContractRepository) UpdateContractNameByOwner(ctx context.Context, contractID, ownerUserID int64, name string) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE contract
+		SET contract_name = ?
+		WHERE id = ? AND owner_user_id = ?
+	`, name, contractID, ownerUserID)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// InsertAuditLog 写入单条合同审计日志。
+func (r *ContractRepository) InsertAuditLog(ctx context.Context, audit *model.ContractAuditLog) error {
+	if audit == nil {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO contract_audit_log (
+			id, contract_id, user_id, collaborator_id,
+			operator_name, operation_type, operation_desc,
+			version_id, ip_address, user_agent,
+			extra_data, create_time
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, audit.ID, audit.ContractID, audit.UserID, audit.CollaboratorID,
+		nullString(audit.OperatorName), audit.OperationType, nullString(audit.OperationDesc),
+		audit.VersionID, nullString(audit.IPAddress), nullString(audit.UserAgent),
+		nil, audit.CreateTime)
+	return err
+}
+
 // DeleteContractsByOwner 在同一事务中删除当前用户拥有的合同及其业务明细。
 func (r *ContractRepository) DeleteContractsByOwner(ctx context.Context, ownerUserID int64, contractIDs []int64, audits []model.ContractAuditLog) ([]string, int64, error) {
 	if len(contractIDs) == 0 {

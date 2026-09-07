@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lshc/contract-hub/backend/internal/collab"
 	"github.com/lshc/contract-hub/backend/internal/docengine"
@@ -920,6 +921,37 @@ func (s *ContractService) Delete(ctx context.Context, contractID, userID int64, 
 		ClientIP:    clientIP,
 		UserAgent:   userAgent,
 	})
+}
+
+// RenameContract 重命名合同（仅元数据）。
+func (s *ContractService) RenameContract(ctx context.Context, contractID, userID int64, name, username, clientIP, userAgent string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("%w: 合同名称不能为空", ErrInvalidContractInput)
+	}
+	if utf8.RuneCountInString(name) > 128 {
+		return fmt.Errorf("%w: 合同名称不能超过 128 字", ErrInvalidContractInput)
+	}
+	affected, err := s.contracts.UpdateContractNameByOwner(ctx, contractID, userID, name)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrContractNotFound
+	}
+	now := time.Now()
+	_ = s.contracts.InsertAuditLog(ctx, &model.ContractAuditLog{
+		ID:            nextID(),
+		ContractID:    contractID,
+		UserID:        userID,
+		OperatorName:  username,
+		OperationType: "RENAME_CONTRACT",
+		OperationDesc: fmt.Sprintf("重命名合同为「%s」", name),
+		IPAddress:     clientIP,
+		UserAgent:     userAgent,
+		CreateTime:    now,
+	})
+	return nil
 }
 
 // BatchDelete 批量删除当前用户名下的合同。

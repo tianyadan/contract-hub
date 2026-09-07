@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type MouseEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   App,
@@ -10,6 +10,7 @@ import {
   Form,
   Input,
   Modal,
+  Popconfirm,
   Row,
   Select,
   Space,
@@ -20,6 +21,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import { ArrowLeftOutlined, DeleteOutlined, EditOutlined, FileAddOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import { deleteContract, updateContractMeta } from '../../api/contractApi'
 import {
   createContractFromTemplate,
   deleteCustomer,
@@ -55,9 +57,12 @@ export default function CustomerDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [addContractOpen, setAddContractOpen] = useState(false)
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renamingContract, setRenamingContract] = useState<ContractListItem | null>(null)
   const [templates, setTemplates] = useState<TemplateListItem[]>([])
   const [form] = Form.useForm()
   const [contractForm] = Form.useForm<{ template_id: number; contract_name?: string }>()
+  const [renameForm] = Form.useForm<{ contract_name: string }>()
 
   const loadData = useCallback(async () => {
     if (!customerId) return
@@ -148,6 +153,32 @@ export default function CustomerDetailPage() {
     })
   }
 
+  /** 打开重命名合同弹窗 */
+  const openRenameContract = (item: ContractListItem, e?: MouseEvent) => {
+    e?.stopPropagation()
+    setRenamingContract(item)
+    renameForm.setFieldsValue({ contract_name: item.contract_name })
+    setRenameOpen(true)
+  }
+
+  /** 提交合同重命名 */
+  const handleRenameContract = async () => {
+    if (!renamingContract) return
+    const values = await renameForm.validateFields()
+    await updateContractMeta(renamingContract.id, { contract_name: values.contract_name.trim() })
+    message.success('合同已重命名')
+    setRenameOpen(false)
+    setRenamingContract(null)
+    await loadData()
+  }
+
+  /** 删除客户名下单份合同 */
+  const handleDeleteContract = async (item: ContractListItem) => {
+    await deleteContract(item.id)
+    message.success('合同已删除')
+    await loadData()
+  }
+
   const contractColumns: ColumnsType<ContractListItem> = [
     {
       title: '合同名称',
@@ -178,6 +209,33 @@ export default function CustomerDetailPage() {
       key: 'create_time',
       width: 170,
       render: (t: string) => dayjs(t).format('YYYY-MM-DD HH:mm'),
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 200,
+      fixed: 'right',
+      render: (_, record) => (
+        <Space size={0} wrap onClick={(e) => e.stopPropagation()}>
+          <Button type="link" size="small" onClick={() => navigate(`/contracts/${record.id}`)}>
+            打开
+          </Button>
+          <Button type="link" size="small" onClick={(e) => openRenameContract(record, e)}>
+            重命名
+          </Button>
+          <Popconfirm
+            title={`确定删除合同「${record.contract_name}」？`}
+            description="删除后不可恢复"
+            okText="删除"
+            okType="danger"
+            onConfirm={() => void handleDeleteContract(record)}
+          >
+            <Button type="link" size="small" danger>
+              删除
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
     },
   ]
 
@@ -226,6 +284,21 @@ export default function CustomerDetailPage() {
                   </span>
                 </div>
               </div>
+              <Space size="small" wrap style={{ marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
+                <Button size="small" onClick={(e) => openRenameContract(item, e)}>
+                  重命名
+                </Button>
+                <Popconfirm
+                  title={`确定删除「${item.contract_name}」？`}
+                  okText="删除"
+                  okType="danger"
+                  onConfirm={() => void handleDeleteContract(item)}
+                >
+                  <Button size="small" danger>
+                    删除
+                  </Button>
+                </Popconfirm>
+              </Space>
             </div>
           ))}
         </div>
@@ -370,6 +443,32 @@ export default function CustomerDetailPage() {
           </Form.Item>
           <Form.Item name="contract_name" label="合同名称（选填）">
             <Input placeholder={`默认：模板名 - ${customer?.customer_name}`} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="重命名合同"
+        open={renameOpen}
+        onCancel={() => {
+          setRenameOpen(false)
+          setRenamingContract(null)
+        }}
+        onOk={() => void handleRenameContract()}
+        destroyOnHidden
+        width={isMobile ? '100%' : 480}
+        style={isMobile ? { top: 16, maxWidth: 'calc(100vw - 24px)' } : undefined}
+      >
+        <Form form={renameForm} layout="vertical">
+          <Form.Item
+            name="contract_name"
+            label="合同名称"
+            rules={[
+              { required: true, message: '请输入合同名称' },
+              { max: 128, message: '不能超过 128 字' },
+            ]}
+          >
+            <Input placeholder="请输入新的合同名称" maxLength={128} />
           </Form.Item>
         </Form>
       </Modal>

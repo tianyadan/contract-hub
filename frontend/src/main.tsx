@@ -5,6 +5,7 @@ import { App as AntApp, ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import App from './App'
 import MessageBridge from './components/MessageBridge'
+import SessionKickBridge from './components/SessionKickBridge'
 import { themeConfig } from './theme'
 import './index.css'
 
@@ -19,6 +20,7 @@ createRoot(document.getElementById('root')!).render(
       <AntApp>
         {/* 桥接 message 实例给 axios 拦截器等非组件模块 */}
         <MessageBridge />
+        <SessionKickBridge />
         <BrowserRouter>
           <App />
         </BrowserRouter>

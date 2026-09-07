@@ -100,13 +100,9 @@ export default function HomePage() {
     },
   ]
 
-  /** 跳转到合同列表并筛选指定状态 */
-  const goContractListByStatus = (status?: number) => {
-    if (status === undefined) {
-      navigate('/contracts')
-    } else {
-      navigate(`/contracts?status=${status}`)
-    }
+  /** 跳转到客户管理（合同入口已收敛到客户侧） */
+  const goContractListByStatus = (_status?: number) => {
+    navigate('/customers')
   }
 
   // 拉取合同列表，统计各状态数量
@@ -263,7 +259,7 @@ export default function HomePage() {
           </span>
         }
         extra={
-          <Typography.Link onClick={() => navigate('/contracts')}>查看全部</Typography.Link>
+          <Typography.Link onClick={() => navigate('/customers')}>查看客户</Typography.Link>
         }
       >
         {loading ? (
@@ -271,7 +267,7 @@ export default function HomePage() {
         ) : recentContracts.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="暂无合同，去合同管理页创建合同吧"
+            description="暂无合同，去客户管理页从模板添加吧"
           />
         ) : isMobile ? (
           renderRecentMobile()
