@@ -3,7 +3,8 @@
 
 services:
   mysql:
-    image: mysql:8.0
+    image: docker.m.daocloud.io/library/mysql:8.0
+    platform: linux/amd64
     container_name: contract-hub-mysql
     restart: unless-stopped
     environment:
@@ -33,6 +34,8 @@ services:
     build:
       context: ./document-engine
       dockerfile: Dockerfile
+    platform: linux/amd64
+    image: contract-hub-document-engine:latest
     container_name: contract-hub-document-engine
     restart: unless-stopped
     networks:
@@ -42,6 +45,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    platform: linux/amd64
+    image: contract-hub-backend:latest
     container_name: contract-hub-backend
     restart: unless-stopped
     environment:
@@ -68,6 +73,8 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+    platform: linux/amd64
+    image: contract-hub-frontend:latest
     container_name: contract-hub-frontend
     restart: unless-stopped
     ports:
