@@ -179,30 +179,50 @@ func randomID(n int) (string, error) {
 	return fmt.Sprintf("%x", b), nil
 }
 
-// renderCaptchaPNG 用内置字体绘制简单验证码图。
+// renderCaptchaPNG 用内置字体绘制验证码，再最近邻放大，保证在登录页清晰可读。
 func renderCaptchaPNG(code string) (string, error) {
-	const w, h = 140, 48
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	draw.Draw(img, img.Bounds(), &image.Uniform{C: color.RGBA{R: 245, G: 247, B: 250, A: 255}}, image.Point{}, draw.Src)
+	const (
+		baseW = 120
+		baseH = 40
+		scale = 3 // 输出约 360×120，字符放大后更易辨认
+	)
 
-	// 干扰线
-	for i := 0; i < 4; i++ {
-		y := 8 + i*10
-		for x := 0; x < w; x++ {
-			img.Set(x, y, color.RGBA{R: 200, G: 210, B: 220, A: 255})
+	base := image.NewRGBA(image.Rect(0, 0, baseW, baseH))
+	draw.Draw(base, base.Bounds(), &image.Uniform{C: color.RGBA{R: 245, G: 247, B: 250, A: 255}}, image.Point{}, draw.Src)
+
+	// 浅色干扰线（放大后仍不抢字）
+	for i := 0; i < 3; i++ {
+		y := 10 + i*10
+		for x := 0; x < baseW; x++ {
+			base.Set(x, y, color.RGBA{R: 210, G: 218, B: 228, A: 255})
 		}
 	}
 
-	d := &font.Drawer{
-		Dst:  img,
-		Src:  image.NewUniform(color.RGBA{R: 30, G: 60, B: 120, A: 255}),
-		Face: basicfont.Face7x13,
-		Dot:  fixed.P(18, 30),
+	// 逐字绘制并拉开间距，避免挤成一团
+	ink := image.NewUniform(color.RGBA{R: 28, G: 55, B: 110, A: 255})
+	x := 14
+	for _, ch := range code {
+		d := &font.Drawer{
+			Dst:  base,
+			Src:  ink,
+			Face: basicfont.Face7x13,
+			Dot:  fixed.P(x, 28),
+		}
+		d.DrawString(string(ch))
+		x += 18
 	}
-	d.DrawString(code)
+
+	// 最近邻放大：位图字体放大后边缘清晰
+	w, h := baseW*scale, baseH*scale
+	out := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			out.Set(x, y, base.At(x/scale, y/scale))
+		}
+	}
 
 	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
+	if err := png.Encode(&buf, out); err != nil {
 		return "", err
 	}
 	return base64.StdEncoding.EncodeToString(buf.Bytes()), nil

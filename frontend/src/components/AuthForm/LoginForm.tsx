@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { App, Button, Checkbox, Form, Input, Space } from 'antd'
+import { App, Button, Checkbox, Form, Input } from 'antd'
 import { LockOutlined, SafetyOutlined, UserOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { getCaptcha, getLoginFailInfo, login } from '../../api/authApi'
@@ -146,29 +146,31 @@ export default function LoginForm({ initialUsername }: LoginFormProps) {
       </Form.Item>
 
       {showCaptcha && (
-        <Form.Item
-          name="captcha_code"
-          label="验证码"
-          rules={[{ required: true, message: '请输入验证码' }]}
-        >
-          <Space.Compact style={{ width: '100%' }}>
-            <Input
-              prefix={<SafetyOutlined />}
-              placeholder="请输入图中字符"
-              autoComplete="off"
-            />
+        <Form.Item label="验证码" required>
+          <div className="auth-form__captcha">
+            <Form.Item
+              name="captcha_code"
+              noStyle
+              rules={[{ required: true, message: '请输入验证码' }]}
+            >
+              <Input
+                prefix={<SafetyOutlined />}
+                placeholder="请输入图中字符"
+                autoComplete="off"
+              />
+            </Form.Item>
             {captchaImg ? (
               <img
                 src={captchaImg}
                 alt="验证码"
                 title="点击刷新"
+                className="auth-form__captcha-img"
                 onClick={() => void refreshCaptcha()}
-                style={{ height: 40, cursor: 'pointer', border: '1px solid #d9d9d9' }}
               />
             ) : (
               <Button onClick={() => void refreshCaptcha()}>获取验证码</Button>
             )}
-          </Space.Compact>
+          </div>
         </Form.Item>
       )}
 
