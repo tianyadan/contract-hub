@@ -1,6 +1,7 @@
 # Go 业务后端多阶段构建
 FROM golang:1.25-bookworm AS builder
 WORKDIR /src
+ENV GOPROXY=https://goproxy.cn,direct
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .

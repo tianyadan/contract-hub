@@ -2,7 +2,8 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+# 国内 npm 镜像，加快服务器构建
+RUN npm ci --registry=https://registry.npmmirror.com
 COPY frontend/ ./
 RUN npm run build
 
