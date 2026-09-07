@@ -15,6 +15,7 @@ import (
 func New(
 	cfg *config.Config,
 	authHandler *handler.AuthHandler,
+	adminHandler *handler.AdminHandler,
 	contractHandler *handler.ContractHandler,
 	templateHandler *handler.TemplateHandler,
 	customerHandler *handler.CustomerHandler,
@@ -52,9 +53,22 @@ func New(
 		{
 			authGroup.POST("/register", authHandler.Register)
 			authGroup.POST("/login", authHandler.Login)
+			authGroup.GET("/captcha", authHandler.Captcha)
 
 			// 需要登录后携带 JWT 访问
 			authGroup.GET("/me", middleware.JWTAuth(cfg.JWTSecret), authHandler.Me)
+		}
+
+		// 管理员接口
+		adminGroup := api.Group("/admin", middleware.JWTAuth(cfg.JWTSecret), middleware.RequireAdmin())
+		{
+			adminGroup.GET("/users", adminHandler.ListUsers)
+			adminGroup.POST("/users/:id/ban", adminHandler.BanUser)
+			adminGroup.POST("/users/:id/enable", adminHandler.EnableUser)
+			adminGroup.POST("/users/:id/reset-password", adminHandler.ResetPassword)
+			adminGroup.DELETE("/users/:id", adminHandler.DeleteUser)
+			adminGroup.POST("/invite-codes", adminHandler.CreateInviteCode)
+			adminGroup.GET("/invite-codes", adminHandler.ListInviteCodes)
 		}
 
 		// 合同设置（用户级）

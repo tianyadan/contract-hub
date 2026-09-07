@@ -18,11 +18,13 @@ import {
   FileTextOutlined,
   FolderOpenOutlined,
   HomeOutlined,
+  KeyOutlined,
   LogoutOutlined,
   MenuOutlined,
   SettingOutlined,
   TeamOutlined,
   UserOutlined,
+  SafetyCertificateOutlined,
 } from '@ant-design/icons'
 import BrandLogo from '../components/BrandLogo'
 import { useIsMobile } from '../hooks/useMediaQuery'
@@ -31,23 +33,37 @@ import './main-layout.css'
 
 const { Header, Sider, Content } = Layout
 
-/** 左侧菜单配置 */
-const MENU_ITEMS: MenuProps['items'] = [
-  { key: '/', label: '首页', icon: <HomeOutlined /> },
-  { key: '/customers', label: '客户管理', icon: <TeamOutlined /> },
-  { key: '/templates', label: '模板池', icon: <FolderOpenOutlined /> },
-  { key: '/contracts', label: '合同管理', icon: <FileTextOutlined /> },
-  {
-    key: '/settings',
-    label: '合同设置',
-    icon: <SettingOutlined />,
-    children: [
-      { key: '/settings/watermark', label: '导出水印' },
-      { key: '/settings/seal', label: '电子章' },
-    ],
-  },
-  { key: '/statistics', label: '数据统计', icon: <BarChartOutlined /> },
-]
+/** 构建左侧菜单（管理员额外显示系统管理） */
+function buildMenuItems(isAdmin: boolean): MenuProps['items'] {
+  const items: MenuProps['items'] = [
+    { key: '/', label: '首页', icon: <HomeOutlined /> },
+    { key: '/customers', label: '客户管理', icon: <TeamOutlined /> },
+    { key: '/templates', label: '模板池', icon: <FolderOpenOutlined /> },
+    { key: '/contracts', label: '合同管理', icon: <FileTextOutlined /> },
+    {
+      key: '/settings',
+      label: '合同设置',
+      icon: <SettingOutlined />,
+      children: [
+        { key: '/settings/watermark', label: '导出水印' },
+        { key: '/settings/seal', label: '电子章' },
+      ],
+    },
+    { key: '/statistics', label: '数据统计', icon: <BarChartOutlined /> },
+  ]
+  if (isAdmin) {
+    items.push({
+      key: '/admin',
+      label: '系统管理',
+      icon: <SafetyCertificateOutlined />,
+      children: [
+        { key: '/admin/users', label: '用户管理', icon: <TeamOutlined /> },
+        { key: '/admin/invite-codes', label: '邀请码', icon: <KeyOutlined /> },
+      ],
+    })
+  }
+  return items
+}
 
 /**
  * 管理系统主布局。
@@ -63,11 +79,16 @@ export default function MainLayout() {
   // 手机抽屉导航
   const [drawerOpen, setDrawerOpen] = useState(false)
   // 子菜单展开 keys
-  const [openKeys, setOpenKeys] = useState<string[]>(() =>
-    location.pathname.startsWith('/settings') ? ['/settings'] : [],
-  )
+  const [openKeys, setOpenKeys] = useState<string[]>(() => {
+    const keys: string[] = []
+    if (location.pathname.startsWith('/settings')) keys.push('/settings')
+    if (location.pathname.startsWith('/admin')) keys.push('/admin')
+    return keys
+  })
   const user = getStoredUser()
   const displayName = user?.nickname || user?.username || '用户'
+  const isAdmin = user?.role === 1
+  const menuItems = useMemo(() => buildMenuItems(!!isAdmin), [isAdmin])
 
   /** 合同/模板详情：内容区收窄边距，给编辑器更多宽度 */
   const isEditorRoute =
@@ -79,16 +100,22 @@ export default function MainLayout() {
     if (path.startsWith('/settings')) {
       return path === '/settings' ? '/settings/watermark' : path
     }
-    const matched = MENU_ITEMS?.find((item) => {
+    if (path.startsWith('/admin')) {
+      return path
+    }
+    const matched = menuItems?.find((item) => {
       const key = item?.key as string
       return key !== '/' && path.startsWith(key)
     })
     return (matched?.key as string) ?? '/'
-  }, [location.pathname])
+  }, [location.pathname, menuItems])
 
   useEffect(() => {
     if (location.pathname.startsWith('/settings')) {
       setOpenKeys((prev) => (prev.includes('/settings') ? prev : [...prev, '/settings']))
+    }
+    if (location.pathname.startsWith('/admin')) {
+      setOpenKeys((prev) => (prev.includes('/admin') ? prev : [...prev, '/admin']))
     }
   }, [location.pathname])
 
@@ -99,7 +126,7 @@ export default function MainLayout() {
 
   /** 菜单点击：跳转并在手机上关闭抽屉 */
   const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
-    if (key === '/settings') return
+    if (key === '/settings' || key === '/admin') return
     navigate(key)
     if (isMobile) setDrawerOpen(false)
   }
@@ -137,7 +164,7 @@ export default function MainLayout() {
         selectedKeys={[selectedKey]}
         openKeys={openKeys}
         onOpenChange={setOpenKeys}
-        items={MENU_ITEMS}
+        items={menuItems}
         onClick={handleMenuClick}
         className="main-layout__menu"
       />

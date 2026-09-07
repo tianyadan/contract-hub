@@ -24,5 +24,6 @@ run_sql migrate_v5.sql
 # 跳过 migrate_v6/v7：init.sql 已含完整 user_watermark_setting（含 density 等列）
 # 跳过 migrate_v1_data.sql：空库无需旧数据迁移
 run_sql migrate_v8.sql
+run_sql migrate_v9.sql
 
 echo "MySQL schema bootstrap done."

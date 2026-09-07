@@ -17,50 +17,67 @@ export interface UserVO {
   email?: string
   /** 头像地址 */
   avatar_url?: string
-  /** 账号状态：1 正常 */
+  /** 账号状态：0 封禁 / 1 正常 / 2 软删除 */
   status: number
+  /** 角色：0 普通 / 1 管理员 */
+  role: number
   /** 创建时间 */
   create_time: string
 }
 
 /** 登录请求参数 */
 export interface LoginParams {
-  /** 登录账号 */
   username: string
-  /** 登录密码 */
   password: string
+  captcha_id?: string
+  captcha_code?: string
 }
 
 /** 注册请求参数 */
 export interface RegisterParams {
-  /** 登录账号（3-64 位） */
   username: string
-  /** 登录密码（6-72 位） */
   password: string
-  /** 昵称 / 姓名 */
   nickname?: string
-  /** 手机号 */
   phone?: string
-  /** 邮箱 */
   email?: string
+  /** 管理员生成的邀请码 */
+  invite_code: string
 }
 
 /** 登录成功返回结果 */
 export interface LoginResult {
-  /** JWT 令牌 */
   token: string
-  /** 令牌过期时间 */
   expires_at: string
-  /** 当前登录用户信息 */
   user: UserVO
+}
+
+/** 图形验证码 */
+export interface CaptchaPayload {
+  captcha_id: string
+  image_base64: string
+}
+
+/** 登录失败附加信息 */
+export interface LoginFailInfo {
+  fail_count: number
+  captcha_required: boolean
 }
 
 /** 后端统一响应结构 */
 export interface ApiResponse<T> {
-  /** 业务状态码：0 表示成功 */
   code: number
-  /** 提示信息 */
   message: string
-  /** 业务数据 */
   data?: T
+}
+
+/** 邀请码 */
+export interface InviteCodeVO {
+  id: number
+  code: string
+  expire_at: string
+  used_at?: string
+  used_by_user_id?: number
+  create_time: string
+  expired: boolean
+  used: boolean
 }

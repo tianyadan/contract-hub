@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { App, Button, Checkbox, Form, Input } from 'antd'
-import { LockOutlined, UserOutlined } from '@ant-design/icons'
+import { App, Button, Checkbox, Form, Input, Space } from 'antd'
+import { LockOutlined, SafetyOutlined, UserOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { login } from '../../api/authApi'
+import { getCaptcha, getLoginFailInfo, login } from '../../api/authApi'
 import {
   getRememberedUsername,
   setRememberedUsername,
@@ -13,62 +13,84 @@ import './auth-form.css'
 
 /** 登录表单字段 */
 interface LoginFormValues {
-  /** 账号 / 手机号 */
   username: string
-  /** 密码 */
   password: string
-  /** 是否记住账号 */
   remember: boolean
+  captcha_code?: string
 }
 
-/** 登录表单组件属性 */
 interface LoginFormProps {
-  /** 初始账号（注册成功后回填） */
   initialUsername?: string
 }
 
 /**
- * 登录表单组件。
- * 负责账号密码校验、调用后端登录接口并保存登录态。
+ * 登录表单：失败满 3 次后展示图形验证码。
  */
 export default function LoginForm({ initialUsername }: LoginFormProps) {
   const navigate = useNavigate()
   const { message } = App.useApp()
   const [form] = Form.useForm<LoginFormValues>()
-  // 登录请求 loading 状态
   const [loading, setLoading] = useState(false)
+  const [failCount, setFailCount] = useState(0)
+  const [captchaId, setCaptchaId] = useState('')
+  const [captchaImg, setCaptchaImg] = useState('')
 
-  // 注册成功后回填账号名
+  const showCaptcha = failCount >= 3
+
   useEffect(() => {
     if (initialUsername) {
       form.setFieldsValue({ username: initialUsername })
     }
   }, [initialUsername, form])
 
-  /** 处理登录提交：调用后端接口并保存登录态 */
+  /** 刷新图形验证码 */
+  const refreshCaptcha = async () => {
+    try {
+      const data = await getCaptcha()
+      setCaptchaId(data.captcha_id)
+      setCaptchaImg(data.image_base64)
+      form.setFieldsValue({ captcha_code: '' })
+    } catch {
+      // 拦截器已提示
+    }
+  }
+
+  useEffect(() => {
+    if (showCaptcha) {
+      void refreshCaptcha()
+    }
+  }, [showCaptcha])
+
   const handleFinish = async (values: LoginFormValues) => {
     setLoading(true)
     try {
       const result = await login({
         username: values.username,
         password: values.password,
+        captcha_id: showCaptcha ? captchaId : undefined,
+        captcha_code: showCaptcha ? values.captcha_code : undefined,
       })
-      // 保存令牌与用户信息到本地
       setToken(result.token)
       setStoredUser(result.user)
-      // 按“记住我”状态保存 / 清除账号名
       setRememberedUsername(values.remember ? values.username : '')
+      setFailCount(0)
       message.success('登录成功')
-      // 登录成功进入系统首页
       navigate('/')
-    } catch {
-      // 错误提示已在请求拦截器统一处理
+    } catch (error) {
+      const info = getLoginFailInfo(error)
+      if (info) {
+        setFailCount(info.fail_count)
+        if (info.captcha_required) {
+          void refreshCaptcha()
+        }
+      } else {
+        setFailCount((n) => n + 1)
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  /** 忘记密码：暂无找回接口，提示联系管理员 */
   const handleForgotPassword = () => {
     message.info('请联系系统管理员重置密码')
   }
@@ -85,7 +107,6 @@ export default function LoginForm({ initialUsername }: LoginFormProps) {
       }}
       className="auth-form"
     >
-      {/* 账号 / 手机号 */}
       <Form.Item
         name="username"
         label="账号 / 手机号"
@@ -102,7 +123,6 @@ export default function LoginForm({ initialUsername }: LoginFormProps) {
         />
       </Form.Item>
 
-      {/* 密码 */}
       <Form.Item
         name="password"
         label="密码"
@@ -118,7 +138,33 @@ export default function LoginForm({ initialUsername }: LoginFormProps) {
         />
       </Form.Item>
 
-      {/* 记住我 + 忘记密码 */}
+      {showCaptcha && (
+        <Form.Item
+          name="captcha_code"
+          label="验证码"
+          rules={[{ required: true, message: '请输入验证码' }]}
+        >
+          <Space.Compact style={{ width: '100%' }}>
+            <Input
+              prefix={<SafetyOutlined />}
+              placeholder="请输入图中字符"
+              autoComplete="off"
+            />
+            {captchaImg ? (
+              <img
+                src={captchaImg}
+                alt="验证码"
+                title="点击刷新"
+                onClick={() => void refreshCaptcha()}
+                style={{ height: 40, cursor: 'pointer', border: '1px solid #d9d9d9' }}
+              />
+            ) : (
+              <Button onClick={() => void refreshCaptcha()}>获取验证码</Button>
+            )}
+          </Space.Compact>
+        </Form.Item>
+      )}
+
       <div className="auth-form__options">
         <Form.Item name="remember" valuePropName="checked" noStyle>
           <Checkbox>记住我</Checkbox>
@@ -128,7 +174,6 @@ export default function LoginForm({ initialUsername }: LoginFormProps) {
         </Button>
       </div>
 
-      {/* 登录按钮 */}
       <Form.Item>
         <Button
           type="primary"

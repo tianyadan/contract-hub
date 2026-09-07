@@ -31,6 +31,7 @@ func JWTAuth(secret string) gin.HandlerFunc {
 		// 后续 handler / service 可以通过 middleware.GetUserID / GetUsername 获取当前用户
 		c.Set("user_id", claims.UserID)
 		c.Set("username", claims.Username)
+		c.Set("role", claims.Role)
 		c.Next()
 	}
 }
@@ -59,6 +60,19 @@ func JWTAuthFlexible(secret string) gin.HandlerFunc {
 		}
 		c.Set("user_id", claims.UserID)
 		c.Set("username", claims.Username)
+		c.Set("role", claims.Role)
+		c.Next()
+	}
+}
+
+// RequireAdmin 要求当前用户为管理员。
+func RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if GetRole(c) != 1 {
+			response.Error(c, http.StatusForbidden, 40302, "需要管理员权限")
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
 }
@@ -81,4 +95,14 @@ func GetUsername(c *gin.Context) string {
 	}
 	name, _ := v.(string)
 	return name
+}
+
+// GetRole 从 Gin Context 获取当前用户角色。
+func GetRole(c *gin.Context) int8 {
+	v, exists := c.Get("role")
+	if !exists {
+		return 0
+	}
+	role, _ := v.(int8)
+	return role
 }

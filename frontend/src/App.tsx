@@ -13,13 +13,27 @@ import VerifyPage from './pages/Verify/VerifyPage'
 import PlaceholderPage from './pages/Placeholder/PlaceholderPage'
 import WatermarkSettingsPage from './pages/Settings/WatermarkSettingsPage'
 import SealSettingsPage from './pages/Settings/SealSettingsPage'
+import AdminUsersPage from './pages/Admin/AdminUsersPage'
+import InviteCodesPage from './pages/Admin/InviteCodesPage'
 import MainLayout from './layouts/MainLayout'
-import { isLoggedIn } from './utils/token'
+import { getStoredUser, isLoggedIn } from './utils/token'
 
 /** 需要登录的路由守卫：未登录时重定向到登录页 */
 function RequireAuth({ children }: { children: ReactNode }) {
   if (!isLoggedIn()) {
     return <Navigate to="/login" replace />
+  }
+  return children
+}
+
+/** 仅管理员可访问 */
+function RequireAdmin({ children }: { children: ReactNode }) {
+  const user = getStoredUser()
+  if (!isLoggedIn()) {
+    return <Navigate to="/login" replace />
+  }
+  if (user?.role !== 1) {
+    return <Navigate to="/" replace />
   }
   return children
 }
@@ -63,6 +77,22 @@ export default function App() {
           path="/statistics"
           element={
             <PlaceholderPage title="数据统计" description="合同数量与业务数据汇总" />
+          }
+        />
+        <Route
+          path="/admin/users"
+          element={
+            <RequireAdmin>
+              <AdminUsersPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="/admin/invite-codes"
+          element={
+            <RequireAdmin>
+              <InviteCodesPage />
+            </RequireAdmin>
           }
         />
       </Route>

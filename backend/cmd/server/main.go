@@ -8,9 +8,11 @@
 package main
 
 import (
+	"context"
 	"log"
 	"time"
 
+	"github.com/lshc/contract-hub/backend/internal/auth"
 	"github.com/lshc/contract-hub/backend/internal/config"
 	"github.com/lshc/contract-hub/backend/internal/database"
 	"github.com/lshc/contract-hub/backend/internal/docengine"
@@ -47,8 +49,16 @@ func main() {
 
 	// 4. 初始化依赖：仓库 -> 服务 -> Handler
 	userRepo := repository.NewUserRepository(db)
-	authService := service.NewAuthService(userRepo, cfg.JWTSecret, time.Duration(cfg.JWTExpireHours)*time.Hour)
+	inviteRepo := repository.NewInviteCodeRepository(db)
+	captchaStore := auth.NewCaptchaStore()
+	loginFailStore := auth.NewLoginFailStore()
+	authService := service.NewAuthService(userRepo, inviteRepo, captchaStore, loginFailStore, cfg.JWTSecret, time.Duration(cfg.JWTExpireHours)*time.Hour)
+	if err := authService.EnsureSeedAdmin(context.Background()); err != nil {
+		log.Fatalf("seed admin failed: %v", err)
+	}
 	authHandler := handler.NewAuthHandler(authService)
+	adminService := service.NewAdminService(userRepo, inviteRepo)
+	adminHandler := handler.NewAdminHandler(adminService)
 
 	contractRepo := repository.NewContractRepository(db)
 	templateRepo := repository.NewTemplateRepository(db)
@@ -85,7 +95,7 @@ func main() {
 	shareWSHandler := ws.ServeShare(wsHub, shareService)
 
 	// 5. 初始化 Gin 引擎并注册路由
-	r := router.New(cfg, authHandler, contractHandler, templateHandler, customerHandler, shareHandler, publicHandler, fidelityHandler, settingsHandler, internalWSHandler, shareWSHandler)
+	r := router.New(cfg, authHandler, adminHandler, contractHandler, templateHandler, customerHandler, shareHandler, publicHandler, fidelityHandler, settingsHandler, internalWSHandler, shareWSHandler)
 
 	// 6. 启动 HTTP 服务
 	log.Printf("contract-hub backend server listening on :%s", cfg.ServerPort)

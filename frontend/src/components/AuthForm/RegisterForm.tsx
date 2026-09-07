@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { App, Button, Form, Input } from 'antd'
 import {
+  KeyOutlined,
   LockOutlined,
   MailOutlined,
   MobileOutlined,
@@ -12,18 +13,13 @@ import './auth-form.css'
 
 /** 注册表单字段 */
 interface RegisterFormValues {
-  /** 登录账号 */
   username: string
-  /** 昵称 / 姓名 */
   nickname?: string
-  /** 手机号 */
   phone?: string
-  /** 邮箱 */
   email?: string
-  /** 密码 */
   password: string
-  /** 确认密码 */
   confirmPassword: string
+  invite_code: string
 }
 
 /** 注册表单组件属性 */
@@ -52,6 +48,7 @@ export default function RegisterForm({ onRegistered }: RegisterFormProps) {
         nickname: values.nickname,
         phone: values.phone,
         email: values.email,
+        invite_code: values.invite_code.trim().toUpperCase(),
       })
       message.success(`注册成功，请使用账号 ${user.username} 登录`)
       onRegistered?.(user.username)
@@ -70,6 +67,20 @@ export default function RegisterForm({ onRegistered }: RegisterFormProps) {
       onFinish={handleFinish}
       className="auth-form"
     >
+      {/* 邀请码（必填） */}
+      <Form.Item
+        name="invite_code"
+        label="邀请码"
+        rules={[{ required: true, message: '请输入管理员提供的邀请码' }]}
+      >
+        <Input
+          prefix={<KeyOutlined />}
+          placeholder="请输入邀请码"
+          autoComplete="off"
+          allowClear
+        />
+      </Form.Item>
+
       {/* 登录账号（必填） */}
       <Form.Item
         name="username"
